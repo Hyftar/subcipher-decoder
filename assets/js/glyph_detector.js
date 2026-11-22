@@ -37,40 +37,72 @@ function median(values) {
 // photos much better than a single global threshold.
 export function binarize(rawGray, width, height, { t = 0.15, minContrast = 16 } = {}) {
   // A light blur removes sensor noise that would otherwise become specks.
-  const gray = boxBlur3(rawGray, width, height)
-  // Light ink on dark paper? Work on the inverted image.
-  const invert = median(sampleEvery(gray, 97)) < 110
-  const px = invert ? (i) => 255 - gray[i] : (i) => gray[i]
+  const blurred = boxBlur3(rawGray, width, height)
+  // Light ink on a dark background? Work on the inverted image.
+  const gray = inkIsLight(blurred, width, height) ? blurred.map((v) => 255 - v) : blurred
 
-  const integral = new Float64Array((width + 1) * (height + 1))
+  const half = Math.max(7, Math.round(Math.max(width, height) / 32))
+  const mean = localMean(gray, width, height, half)
+  const ink = new Uint8Array(width * height)
+  for (let i = 0; i < ink.length; i++) {
+    if (gray[i] < mean[i] * (1 - t) && mean[i] - gray[i] > minContrast) ink[i] = 1
+  }
+  return ink
+}
+
+// Mean of the (2 * half + 1)² neighbourhood of every pixel (integral image).
+export function localMean(gray, width, height, half) {
+  const stride = width + 1
+  const integral = new Float64Array(stride * (height + 1))
   for (let y = 0; y < height; y++) {
     let rowSum = 0
     for (let x = 0; x < width; x++) {
-      rowSum += px(y * width + x)
-      integral[(y + 1) * (width + 1) + (x + 1)] = integral[y * (width + 1) + (x + 1)] + rowSum
+      rowSum += gray[y * width + x]
+      integral[(y + 1) * stride + x + 1] = integral[y * stride + x + 1] + rowSum
     }
   }
 
-  const half = Math.max(7, Math.round(Math.max(width, height) / 32))
-  const ink = new Uint8Array(width * height)
+  const mean = new Float32Array(width * height)
   for (let y = 0; y < height; y++) {
     const y0 = Math.max(0, y - half)
     const y1 = Math.min(height, y + half + 1)
     for (let x = 0; x < width; x++) {
       const x0 = Math.max(0, x - half)
       const x1 = Math.min(width, x + half + 1)
-      const count = (x1 - x0) * (y1 - y0)
       const sum =
-        integral[y1 * (width + 1) + x1] -
-        integral[y0 * (width + 1) + x1] -
-        integral[y1 * (width + 1) + x0] +
-        integral[y0 * (width + 1) + x0]
-      const mean = sum / count
-      const v = px(y * width + x)
-      if (v < mean * (1 - t) && mean - v > minContrast) ink[y * width + x] = 1
+        integral[y1 * stride + x1] - integral[y0 * stride + x1] - integral[y1 * stride + x0] + integral[y0 * stride + x0]
+      mean[y * width + x] = sum / ((x1 - x0) * (y1 - y0))
     }
   }
-  return ink
+  return mean
+}
+
+// Decides the ink polarity. Lighting is first flattened (each pixel minus a
+// wide local average) so gradients and shadows don't matter. The background
+// is then the most common value, and the ink is whichever side of it
+// (darker or lighter) holds more strongly contrasting pixels. Handles dark
+// text on paper as well as light symbols with dark outlines/shadows on a
+// darker background, where the thin outlines must not be taken for ink.
+export function inkIsLight(gray, width, height, { margin = 40 } = {}) {
+  const half = Math.max(15, Math.round(Math.max(width, height) / 8))
+  const mean = localMean(gray, width, height, half)
+  const flat = new Int16Array(gray.length)
+  const hist = new Uint32Array(64) // buckets of 8 over [-256, 256)
+  for (let i = 0; i < gray.length; i++) {
+    flat[i] = Math.round(gray[i] - mean[i])
+    hist[Math.min(63, Math.max(0, (flat[i] + 256) >> 3))]++
+  }
+  let peak = 0
+  for (let b = 1; b < hist.length; b++) if (hist[b] > hist[peak]) peak = b
+  const background = peak * 8 - 256 + 4
+
+  let darker = 0
+  let lighter = 0
+  for (let i = 0; i < flat.length; i++) {
+    if (flat[i] < background - margin) darker++
+    else if (flat[i] > background + margin) lighter++
+  }
+  return lighter > darker
 }
 
 export function boxBlur3(gray, width, height) {
@@ -95,11 +127,6 @@ export function boxBlur3(gray, width, height) {
   return out
 }
 
-function sampleEvery(arr, step) {
-  const out = []
-  for (let i = 0; i < arr.length; i += step) out.push(arr[i])
-  return out
-}
 
 // 8-connected component labelling. Returns per-pixel labels (0 = background)
 // and a list of components with bounding boxes.
@@ -175,35 +202,44 @@ function overlap(a0, a1, b0, b1) {
   return Math.max(0, Math.min(a1, b1) - Math.max(a0, b0) + 1)
 }
 
-// Decide whether two boxes belong to the same symbol.
-function shouldMerge(a, b, refH) {
-  // One box contains (most of) the other: circled symbols, enclosed marks.
+const mergedBox = (a, b) => ({
+  w: Math.max(a.x1, b.x1) - Math.min(a.x0, b.x0) + 1,
+  h: Math.max(a.y1, b.y1) - Math.min(a.y0, b.y0) + 1,
+})
+
+// One box contains (most of) the other: circled symbols, enclosed marks,
+// bits of a symbol cut off by its own inner lines.
+function contains(a, b) {
   const ix = overlap(a.x0, a.x1, b.x0, b.x1)
   const iy = overlap(a.y0, a.y1, b.y0, b.y1)
-  const smallerArea = Math.min(w(a) * h(a), w(b) * h(b))
-  if (ix * iy >= 0.6 * smallerArea) return true
+  return ix * iy >= 0.6 * Math.min(w(a) * h(a), w(b) * h(b))
+}
 
-  // A small fragment practically touching a symbol (detached rays, serifs
-  // broken by a bad scan...).
+// Decide whether two boxes belong to the same symbol.
+function shouldMerge(a, b, refH) {
+  if (contains(a, b)) return true
+
   const gapX = Math.max(a.x0, b.x0) - Math.min(a.x1, b.x1) - 1
   const gapY = Math.max(a.y0, b.y0) - Math.min(a.y1, b.y1) - 1
-  const small = (c) => Math.max(w(c), h(c)) < 0.35 * refH
-  if ((small(a) || small(b)) && Math.max(gapX, gapY) <= 0.08 * refH) {
-    const mergedW = Math.max(a.x1, b.x1) - Math.min(a.x0, b.x0) + 1
-    const mergedH = Math.max(a.y1, b.y1) - Math.min(a.y0, b.y0) + 1
-    if (mergedW <= 1.6 * refH && mergedH <= 1.4 * refH) return true
+  const merged = mergedBox(a, b)
+  if (Math.max(gapX, gapY) <= 0.08 * refH) {
+    // A small fragment practically touching a symbol (detached rays,
+    // serifs broken by a bad scan...).
+    const small = (c) => Math.max(w(c), h(c)) < 0.35 * refH
+    if ((small(a) || small(b)) && merged.w <= 1.6 * refH && merged.h <= 1.4 * refH) return true
+    // Parts touching or overlapping that together are no bigger than a
+    // typical symbol (e.g. two small squares set diagonally).
+    if (merged.w <= 1.15 * refH && merged.h <= 1.15 * refH) return true
   }
 
   // Stacked parts: "i", "j", "=", ":", accents, dotted pigpen glyphs...
-  if (ix < 0.5 * Math.min(w(a), w(b))) return false
-  const gap = Math.max(a.y0, b.y0) - Math.min(a.y1, b.y1) - 1
-  if (gap > 0.45 * refH) return false
-  const mergedH = Math.max(a.y1, b.y1) - Math.min(a.y0, b.y0) + 1
-  return mergedH <= 1.5 * refH
+  if (overlap(a.x0, a.x1, b.x0, b.x1) < 0.5 * Math.min(w(a), w(b))) return false
+  if (gapY > 0.45 * refH) return false
+  return merged.h <= 1.5 * refH
 }
 
-export function mergeComponents(components, refH) {
-  let groups = components.map((c, i) => ({ ...c, members: [i] }))
+// Repeatedly merges pairs of boxes accepted by `predicate` until stable.
+function mergeWhile(groups, refH, predicate) {
   let changed = true
   while (changed) {
     changed = false
@@ -214,7 +250,7 @@ export function mergeComponents(components, refH) {
         const b = groups[j]
         // Sorted by x0: nothing further can overlap or be close enough.
         if (b.x0 > a.x1 + 0.08 * refH + 1) break
-        if (shouldMerge(a, b, refH)) {
+        if (predicate(a, b, refH)) {
           groups[i] = {
             x0: Math.min(a.x0, b.x0),
             y0: Math.min(a.y0, b.y0),
@@ -231,6 +267,13 @@ export function mergeComponents(components, refH) {
     }
   }
   return groups
+}
+
+export function mergeComponents(components, refH) {
+  const groups = components.map((c, i) => ({ ...c, members: [i] }))
+  // Absorb enclosed pieces first, so a crumb of a symbol isn't mistaken for
+  // a separate part and glued to a neighbouring symbol.
+  return mergeWhile(mergeWhile(groups, refH, contains), refH, shouldMerge)
 }
 
 // Scale-invariant description of a glyph: the glyph is fitted (keeping its
@@ -266,6 +309,29 @@ export function toBase64(bytes) {
   return btoa(s)
 }
 
+// Merges components into glyphs, assuming the symbols of a cipher are all
+// about the same size. The typical glyph height drives the merge rules, but
+// it can only be measured once pieces are merged: symbols made of several
+// pieces (bars, dots, inner fills) make the raw pieces much smaller than a
+// glyph. So: estimate it on the pieces, merge, re-measure it on the merged
+// glyphs, and merge again until the estimate settles.
+export function mergeToGlyphSize(candidates, { maxPasses = 4 } = {}) {
+  const glyphHeight = (boxes) => {
+    const bigEnough = boxes.filter((c) => c.area >= 12)
+    return median((bigEnough.length ? bigEnough : boxes).map(h))
+  }
+
+  let refH = glyphHeight(candidates)
+  let groups = mergeComponents(candidates, refH)
+  for (let pass = 1; pass < maxPasses; pass++) {
+    const measured = glyphHeight(groups)
+    if (Math.abs(measured - refH) <= Math.max(1, 0.05 * refH)) break
+    refH = measured
+    groups = mergeComponents(candidates, refH)
+  }
+  return { refH, groups }
+}
+
 export function detectGlyphs(gray, width, height, opts = {}) {
   const ink = binarize(gray, width, height, opts)
   const { labels, components } = connectedComponents(ink, width, height)
@@ -276,12 +342,10 @@ export function detectGlyphs(gray, width, height, opts = {}) {
   )
   if (candidates.length === 0) return []
 
-  // Typical symbol height, estimated on the larger components.
-  const bigEnough = candidates.filter((c) => c.area >= 12)
-  const refH = median((bigEnough.length ? bigEnough : candidates).map(h))
+  const { refH, groups: merged } = mergeToGlyphSize(candidates)
 
   const indexOf = new Map(components.map((c, i) => [c, i]))
-  const groups = mergeComponents(candidates, refH).map((g) => ({
+  const groups = merged.map((g) => ({
     ...g,
     members: g.members.map((m) => indexOf.get(candidates[m])),
   }))

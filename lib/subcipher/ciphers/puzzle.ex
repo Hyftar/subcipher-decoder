@@ -4,11 +4,9 @@ defmodule Subcipher.Ciphers.Puzzle do
 
   schema "puzzles" do
     field :title, :string
-    field :image_path, :string
-    field :image_width, :integer
-    field :image_height, :integer
     field :threshold, :float
 
+    has_many :images, Subcipher.Ciphers.Image
     has_many :symbols, Subcipher.Ciphers.Symbol
     has_many :glyphs, Subcipher.Ciphers.Glyph
 
@@ -17,12 +15,10 @@ defmodule Subcipher.Ciphers.Puzzle do
 
   def changeset(puzzle, attrs) do
     puzzle
-    |> cast(attrs, [:title, :image_path, :image_width, :image_height, :threshold])
+    |> cast(attrs, [:title, :threshold])
     |> update_change(:title, &String.trim/1)
-    |> validate_required([:title, :image_path, :image_width, :image_height, :threshold])
+    |> validate_required([:title, :threshold])
     |> validate_length(:title, max: 120)
-    |> validate_number(:image_width, greater_than: 0)
-    |> validate_number(:image_height, greater_than: 0)
   end
 
   def title_changeset(puzzle, attrs) do

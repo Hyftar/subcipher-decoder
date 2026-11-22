@@ -37,3 +37,13 @@ for f in pangram_clean pangram_photo; do
   magick "$OUT/$f.png" -colorspace gray -depth 8 "gray:$OUT/$f.gray"
   magick identify -format '%w %h\n' "$OUT/$f.png" > "$OUT/$f.size"
 done
+
+# A real-world example: light pixel-art symbols with dark outlines and drop
+# shadows on a darker textured background. Kept as raw RGBA so the JS test
+# goes through the same grayscale conversion as the browser.
+magick "$OUT/pixel_glyphs.png" -depth 8 "rgba:$OUT/pixel_glyphs.rgba"
+magick identify -format '%w %h\n' "$OUT/pixel_glyphs.png" > "$OUT/pixel_glyphs.size"
+
+# Second picture of the same cipher (smaller, several symbols made of pieces).
+magick "$OUT/pixel_glyphs_2.png" -depth 8 "rgba:$OUT/pixel_glyphs_2.rgba"
+magick identify -format '%w %h\n' "$OUT/pixel_glyphs_2.png" > "$OUT/pixel_glyphs_2.size"

@@ -18,6 +18,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
      |> assign(:selected_glyph_id, nil)
      |> assign(:merging, false)
      |> assign(:show_image, false)
+     |> assign(:show_add, false)
      |> assign(:english_frequency, @english_frequency)
      |> load(puzzle)}
   end
@@ -31,6 +32,8 @@ defmodule SubcipherWeb.PuzzleLive.Show do
     by_symbol = Enum.group_by(puzzle.glyphs, & &1.symbol_id)
     visible = Enum.reject(puzzle.glyphs, &symbols[&1.symbol_id].ignored)
     total = max(length(visible), 1)
+    # Reading order across pictures (glyphs are loaded picture by picture).
+    order = puzzle.glyphs |> Enum.with_index() |> Map.new(fn {g, i} -> {g.id, i} end)
 
     key =
       puzzle.symbols
@@ -45,7 +48,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
         }
       end)
       |> Enum.reject(&is_nil(&1.sample))
-      |> Enum.sort_by(&{&1.symbol.ignored, -&1.count, &1.sample.position})
+      |> Enum.sort_by(&{&1.symbol.ignored, -&1.count, Map.fetch!(order, &1.sample.id)})
 
     duplicates =
       puzzle.symbols
@@ -61,8 +64,8 @@ defmodule SubcipherWeb.PuzzleLive.Show do
     |> assign(:title_form, to_form(Ciphers.change_title(puzzle)))
     |> assign(:symbols, symbols)
     |> assign(:key, key)
-    |> assign(:lines, lines(puzzle.glyphs))
-    |> assign(:scale, @display_height / max(median(Enum.map(puzzle.glyphs, & &1.h)), 1))
+    |> assign(:images, Map.new(puzzle.images, &{&1.id, &1}))
+    |> assign(:sections, sections(puzzle))
     |> assign(:duplicates, duplicates)
     |> assign(:solved, Enum.count(active, & &1.symbol.letter))
     |> assign(:symbol_count, length(active))
@@ -71,8 +74,28 @@ defmodule SubcipherWeb.PuzzleLive.Show do
     |> keep_selection_valid()
   end
 
+  # One section per picture. Each picture gets its own display scale so that
+  # glyphs from pictures taken at different sizes look alike.
+  defp sections(puzzle) do
+    by_image = Enum.group_by(puzzle.glyphs, & &1.image_id)
+
+    for {image, index} <- Enum.with_index(puzzle.images, 1) do
+      glyphs = Map.get(by_image, image.id, [])
+
+      %{
+        image: image,
+        index: index,
+        glyphs: glyphs,
+        lines: lines(glyphs),
+        scale: @display_height / max(median(Enum.map(glyphs, & &1.h)), 1)
+      }
+    end
+  end
+
   # Lines -> words -> glyphs, with each line's vertical extent so glyphs can
   # keep their position relative to the baseline.
+  defp lines([]), do: []
+
   defp lines(glyphs) do
     glyphs
     |> Enum.chunk_by(& &1.line)
@@ -92,7 +115,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
           fn acc -> {:cont, Enum.reverse(acc), []} end
         )
 
-      %{id: hd(line).line, top: top, height: bottom - top, words: words}
+      %{id: "#{hd(line).image_id}-#{hd(line).line}", top: top, height: bottom - top, words: words}
     end)
   end
 
@@ -185,6 +208,35 @@ defmodule SubcipherWeb.PuzzleLive.Show do
     {:noreply, update(socket, :show_image, &(!&1))}
   end
 
+  def handle_event("toggle_add", _params, socket) do
+    {:noreply, update(socket, :show_add, &(!&1))}
+  end
+
+  def handle_event("move_image", %{"id" => id, "direction" => direction}, socket)
+      when direction in ~w(up down) do
+    image = Enum.find(socket.assigns.puzzle.images, &(to_string(&1.id) == id))
+
+    case image && Ciphers.move_image(image, String.to_existing_atom(direction)) do
+      {:ok, puzzle} -> {:noreply, load(socket, puzzle)}
+      _ -> {:noreply, put_flash(socket, :error, "Could not move the picture.")}
+    end
+  end
+
+  def handle_event("delete_image", %{"id" => id}, socket) do
+    image = Enum.find(socket.assigns.puzzle.images, &(to_string(&1.id) == id))
+
+    case image && Ciphers.delete_image(image) do
+      {:ok, puzzle} ->
+        {:noreply, socket |> load(puzzle) |> put_flash(:info, "Picture removed.")}
+
+      {:error, :last_image} ->
+        {:noreply, put_flash(socket, :error, "A cipher needs at least one picture.")}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Could not remove the picture.")}
+    end
+  end
+
   def handle_event("regroup", %{"tolerance" => tolerance}, socket) do
     with {t, ""} <- Integer.parse(tolerance),
          true <- t in 5..150,
@@ -218,6 +270,22 @@ defmodule SubcipherWeb.PuzzleLive.Show do
     end
   end
 
+  @impl true
+  def handle_info({SubcipherWeb.PictureUploadComponent, {:added, puzzle, stats}}, socket) do
+    message =
+      case stats.new_symbols do
+        0 -> "Picture added: #{stats.glyphs} glyphs, all matching known symbols."
+        1 -> "Picture added: #{stats.glyphs} glyphs, 1 new symbol."
+        n -> "Picture added: #{stats.glyphs} glyphs, #{n} new symbols."
+      end
+
+    {:noreply,
+     socket
+     |> assign(:show_add, false)
+     |> load(puzzle)
+     |> put_flash(:info, message)}
+  end
+
   # Clicking a symbol while merging merges it into the selected symbol.
   defp select(%{assigns: %{merging: true}} = socket, symbol_id, _glyph_id) do
     %{selected_symbol_id: target_id, symbols: symbols} = socket.assigns
@@ -244,10 +312,14 @@ defmodule SubcipherWeb.PuzzleLive.Show do
       else: {:noreply, assign(socket, selected_symbol_id: nil, selected_glyph_id: nil)}
   end
 
-  defp handle_key(key, shift, socket)
-       when key in ~w(ArrowRight ArrowDown Tab ArrowLeft ArrowUp) do
-    backwards = key in ~w(ArrowLeft ArrowUp) or (key == "Tab" and shift)
-    {:noreply, move_selection(socket, if(backwards, do: -1, else: 1))}
+  # ← / →: previous / next character of the text.
+  defp handle_key("ArrowLeft", _shift, socket), do: {:noreply, move_in_text(socket, -1)}
+  defp handle_key("ArrowRight", _shift, socket), do: {:noreply, move_in_text(socket, 1)}
+
+  # ↑ / ↓ (and Tab / Shift+Tab): previous / next symbol of the symbol key.
+  defp handle_key(key, shift, socket) when key in ~w(ArrowDown ArrowUp Tab) do
+    backwards = key == "ArrowUp" or (key == "Tab" and shift)
+    {:noreply, move_in_key(socket, if(backwards, do: -1, else: 1))}
   end
 
   defp handle_key(key, _shift, socket) when key in ~w(Backspace Delete) do
@@ -266,8 +338,43 @@ defmodule SubcipherWeb.PuzzleLive.Show do
 
   defp selected_symbol(socket), do: socket.assigns.symbols[socket.assigns.selected_symbol_id]
 
+  # Moves character by character through the text, in reading order (picture
+  # after picture), skipping ignored symbols. Stops at both ends. When a
+  # symbol is selected without a specific character (e.g. from the key), the
+  # move starts from its first occurrence.
+  defp move_in_text(socket, step) do
+    %{puzzle: puzzle, symbols: symbols} = socket.assigns
+    glyphs = Enum.reject(puzzle.glyphs, &symbols[&1.symbol_id].ignored)
+    current = Enum.find_index(glyphs, &(&1.id == socket.assigns.selected_glyph_id))
+
+    target =
+      cond do
+        glyphs == [] ->
+          nil
+
+        current ->
+          # Clamped: no wrapping (Enum.at/2 would read negative indexes from the end).
+          Enum.at(glyphs, (current + step) |> max(0) |> min(length(glyphs) - 1))
+
+        socket.assigns.selected_symbol_id ->
+          Enum.find(glyphs, &(&1.symbol_id == socket.assigns.selected_symbol_id)) ||
+            hd(glyphs)
+
+        step > 0 ->
+          hd(glyphs)
+
+        true ->
+          List.last(glyphs)
+      end
+
+    case target do
+      nil -> socket
+      g -> assign(socket, selected_symbol_id: g.symbol_id, selected_glyph_id: g.id)
+    end
+  end
+
   # Moves through the symbol key (most frequent first), skipping ignored ones.
-  defp move_selection(socket, step) do
+  defp move_in_key(socket, step) do
     ids = for %{symbol: s} <- socket.assigns.key, !s.ignored, do: s.id
 
     case ids do
@@ -304,6 +411,13 @@ defmodule SubcipherWeb.PuzzleLive.Show do
         id="puzzle"
         phx-hook="CipherKeys"
         data-selected={to_string(@selected_symbol_id != nil)}
+        data-scroll-to={
+          cond do
+            @selected_glyph_id -> "glyph-#{@selected_glyph_id}"
+            @selected_symbol_id -> "symbol-#{@selected_symbol_id}"
+            true -> nil
+          end
+        }
         class="space-y-6"
       >
         <div class="flex flex-wrap items-center gap-3">
@@ -340,7 +454,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
               glyph_id={@selected_glyph_id}
               merging={@merging}
               key={@key}
-              puzzle={@puzzle}
+              images={@images}
             />
 
             <section
@@ -349,23 +463,36 @@ defmodule SubcipherWeb.PuzzleLive.Show do
               phx-click="deselect"
             >
               <div
-                :for={line <- @lines}
-                id={"line-#{line.id}"}
-                class="flex flex-wrap gap-x-5 gap-y-3 pb-5 border-b border-dashed border-base-300 last:border-0 last:pb-0"
+                :for={section <- @sections}
+                id={"section-#{section.image.id}"}
+                class="space-y-5 [&+&]:pt-6 [&+&]:border-t-2 [&+&]:border-base-300"
               >
-                <div :for={word <- line.words} class="flex items-start gap-1">
-                  <.glyph_cell
-                    :for={g <- word}
-                    glyph={g}
-                    line={line}
-                    symbol={@symbols[g.symbol_id]}
-                    puzzle={@puzzle}
-                    scale={@scale}
-                    selected={g.symbol_id == @selected_symbol_id}
-                    current={g.id == @selected_glyph_id}
-                    merging={@merging}
-                    duplicate={MapSet.member?(@duplicates, @symbols[g.symbol_id].letter)}
-                  />
+                <div
+                  :if={length(@sections) > 1}
+                  class="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-base-content/50"
+                >
+                  Picture {section.index}
+                  <.picture_controls section={section} count={length(@sections)} />
+                </div>
+                <div
+                  :for={line <- section.lines}
+                  id={"line-#{line.id}"}
+                  class="flex flex-wrap gap-x-5 gap-y-3 pb-5 border-b border-dashed border-base-300 last:border-0 last:pb-0"
+                >
+                  <div :for={word <- line.words} class="flex items-start gap-1">
+                    <.glyph_cell
+                      :for={g <- word}
+                      glyph={g}
+                      line={line}
+                      symbol={@symbols[g.symbol_id]}
+                      image={section.image}
+                      scale={section.scale}
+                      selected={g.symbol_id == @selected_symbol_id}
+                      current={g.id == @selected_glyph_id}
+                      merging={@merging}
+                      duplicate={MapSet.member?(@duplicates, @symbols[g.symbol_id].letter)}
+                    />
+                  </div>
                 </div>
               </div>
             </section>
@@ -394,37 +521,67 @@ defmodule SubcipherWeb.PuzzleLive.Show do
                 phx-click="toggle_image"
                 class="w-full flex items-center justify-between px-4 py-2 text-sm font-semibold"
               >
-                Original picture & detected symbols
+                {if length(@puzzle.images) > 1,
+                  do: "Original pictures & detected symbols",
+                  else: "Original picture & detected symbols"}
                 <.icon
                   name={if @show_image, do: "hero-chevron-up", else: "hero-chevron-down"}
                   class="size-4"
                 />
               </button>
-              <div :if={@show_image} class="p-4 pt-0">
-                <div class="relative">
-                  <img
-                    src={@puzzle.image_path}
-                    alt="Cipher picture"
-                    class="block w-full h-auto rounded-lg"
-                  />
-                  <button
-                    :for={g <- @puzzle.glyphs}
-                    type="button"
-                    phx-click="select_glyph"
-                    phx-value-id={g.id}
-                    aria-label="Select symbol"
-                    class={[
-                      "absolute rounded-[2px] ring-1 transition",
-                      cond do
-                        g.symbol_id == @selected_symbol_id -> "ring-2 ring-primary bg-primary/25"
-                        @symbols[g.symbol_id].ignored -> "ring-base-content/20"
-                        @symbols[g.symbol_id].letter -> "ring-success/70 bg-success/10"
-                        true -> "ring-warning/70 hover:bg-warning/20"
-                      end
-                    ]}
-                    style={box_style(g, @puzzle)}
-                  />
-                </div>
+              <div :if={@show_image} class="p-4 pt-0 space-y-4">
+                <figure
+                  :for={section <- @sections}
+                  id={"picture-#{section.image.id}"}
+                  class="space-y-2"
+                >
+                  <figcaption
+                    :if={length(@sections) > 1}
+                    class="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-base-content/50"
+                  >
+                    Picture {section.index}
+                    <span class="flex items-center gap-1">
+                      <.picture_controls
+                        section={section}
+                        count={length(@sections)}
+                        id_prefix="panel-"
+                      />
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-xs normal-case tracking-normal font-normal"
+                        phx-click="delete_image"
+                        phx-value-id={section.image.id}
+                        data-confirm="Remove this picture? Symbols that only appear in it are removed too."
+                      >
+                        <.icon name="hero-trash" class="size-4" /> Remove
+                      </button>
+                    </span>
+                  </figcaption>
+                  <div class="relative">
+                    <img
+                      src={section.image.path}
+                      alt={"Cipher picture #{section.index}"}
+                      class="block w-full h-auto rounded-lg"
+                    />
+                    <button
+                      :for={g <- section.glyphs}
+                      type="button"
+                      phx-click="select_glyph"
+                      phx-value-id={g.id}
+                      aria-label="Select symbol"
+                      class={[
+                        "absolute rounded-[2px] ring-1 transition",
+                        cond do
+                          g.symbol_id == @selected_symbol_id -> "ring-2 ring-primary bg-primary/25"
+                          @symbols[g.symbol_id].ignored -> "ring-base-content/20"
+                          @symbols[g.symbol_id].letter -> "ring-success/70 bg-success/10"
+                          true -> "ring-warning/70 hover:bg-warning/20"
+                        end
+                      ]}
+                      style={box_style(g, section.image)}
+                    />
+                  </div>
+                </figure>
                 <.form
                   for={%{}}
                   id="regroup-form"
@@ -457,11 +614,38 @@ defmodule SubcipherWeb.PuzzleLive.Show do
                 </.form>
               </div>
             </section>
+
+            <section id="add-picture" class="rounded-2xl border border-base-300 bg-base-100">
+              <button
+                type="button"
+                phx-click="toggle_add"
+                class="w-full flex items-center justify-between px-4 py-2 text-sm font-semibold"
+              >
+                <span class="flex items-center gap-2">
+                  <.icon name="hero-plus-circle" class="size-4" /> Add a picture to this cipher
+                </span>
+                <.icon
+                  name={if @show_add, do: "hero-chevron-up", else: "hero-chevron-down"}
+                  class="size-4"
+                />
+              </button>
+              <div :if={@show_add} class="p-4 pt-0 space-y-3">
+                <p class="text-sm text-base-content/70">
+                  Symbols in the new picture are matched with the ones you already have, so
+                  your letters apply to it right away.
+                </p>
+                <.live_component
+                  module={SubcipherWeb.PictureUploadComponent}
+                  id="add-picture-upload"
+                  puzzle={@puzzle}
+                />
+              </div>
+            </section>
           </div>
 
           <.symbol_key
             key={@key}
-            puzzle={@puzzle}
+            images={@images}
             selected_symbol_id={@selected_symbol_id}
             duplicates={@duplicates}
             english_frequency={@english_frequency}
@@ -472,20 +656,61 @@ defmodule SubcipherWeb.PuzzleLive.Show do
     """
   end
 
+  attr :section, :map, required: true
+  attr :count, :integer, required: true, doc: "number of pictures in the puzzle"
+  attr :id_prefix, :string, default: "", doc: "keeps ids unique when rendered twice"
+
+  # Moves a picture earlier/later in the reading order.
+  defp picture_controls(assigns) do
+    ~H"""
+    <span class="flex items-center normal-case tracking-normal font-normal">
+      <button
+        type="button"
+        id={"#{@id_prefix}move-up-#{@section.image.id}"}
+        class="btn btn-ghost btn-xs btn-square"
+        phx-click="move_image"
+        phx-value-id={@section.image.id}
+        phx-value-direction="up"
+        disabled={@section.index == 1}
+        aria-label={"Move picture #{@section.index} up"}
+        title="Move up"
+      >
+        <.icon name="hero-arrow-up" class="size-4" />
+      </button>
+      <button
+        type="button"
+        id={"#{@id_prefix}move-down-#{@section.image.id}"}
+        class="btn btn-ghost btn-xs btn-square"
+        phx-click="move_image"
+        phx-value-id={@section.image.id}
+        phx-value-direction="down"
+        disabled={@section.index == @count}
+        aria-label={"Move picture #{@section.index} down"}
+        title="Move down"
+      >
+        <.icon name="hero-arrow-down" class="size-4" />
+      </button>
+    </span>
+    """
+  end
+
   attr :symbol, :any, required: true
   attr :glyph_id, :any, required: true
   attr :merging, :boolean, required: true
   attr :key, :list, required: true
-  attr :puzzle, :any, required: true
+  attr :images, :map, required: true
 
   defp selection_bar(%{symbol: nil} = assigns) do
     ~H"""
     <div class="rounded-xl bg-base-200/60 px-4 py-3 text-sm text-base-content/70 flex items-center gap-2">
       <.icon name="hero-cursor-arrow-rays" class="size-5 shrink-0" />
-      Click a symbol, then type the letter it stands for. Every identical symbol is replaced
-      at once. <kbd class="kbd kbd-xs">←</kbd><kbd class="kbd kbd-xs">→</kbd>
-      move between symbols, <kbd class="kbd kbd-xs">⌫</kbd>
-      clears.
+      <p id="keyboard-help">
+        Click a symbol, then type the letter it stands for. Every identical symbol is replaced
+        at once. <kbd class="kbd kbd-xs">←</kbd> <kbd class="kbd kbd-xs">→</kbd>
+        previous / next character, <kbd class="kbd kbd-xs">↑</kbd> <kbd class="kbd kbd-xs">↓</kbd>
+        previous / next symbol of the key, <kbd class="kbd kbd-xs">⌫</kbd>
+        clears.
+      </p>
     </div>
     """
   end
@@ -503,7 +728,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
       ]}
     >
       <span class="grid place-items-center size-12 rounded-lg bg-base-100 shrink-0">
-        <.glyph_image glyph={@entry.sample} puzzle={@puzzle} box={40} />
+        <.glyph_image glyph={@entry.sample} image={@images[@entry.sample.image_id]} box={40} />
       </span>
       <div class="flex-1 min-w-40">
         <%= if @merging do %>
@@ -555,7 +780,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
   attr :glyph, :any, required: true
   attr :line, :map, required: true
   attr :symbol, :any, required: true
-  attr :puzzle, :any, required: true
+  attr :image, :any, required: true
   attr :scale, :float, required: true
   attr :selected, :boolean, required: true
   attr :current, :boolean, required: true
@@ -585,7 +810,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
           class="block"
           style={"margin-top: #{px((@glyph.y - @line.top) * @scale)}"}
         >
-          <.glyph_image glyph={@glyph} puzzle={@puzzle} scale={@scale} />
+          <.glyph_image glyph={@glyph} image={@image} scale={@scale} />
         </span>
       </span>
       <span
@@ -605,7 +830,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
   end
 
   attr :key, :list, required: true
-  attr :puzzle, :any, required: true
+  attr :images, :map, required: true
   attr :selected_symbol_id, :any, required: true
   attr :duplicates, :any, required: true
   attr :english_frequency, :string, required: true
@@ -648,7 +873,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
             class="flex flex-1 items-center gap-3 min-w-0 text-left"
           >
             <span class="grid place-items-center size-10 rounded-md bg-base-200/60 shrink-0">
-              <.glyph_image glyph={entry.sample} puzzle={@puzzle} box={32} />
+              <.glyph_image glyph={entry.sample} image={@images[entry.sample.image_id]} box={32} />
             </span>
             <span class="text-xs text-base-content/70 leading-tight">
               <span class="block font-medium text-base-content">×{entry.count}</span>
@@ -688,13 +913,13 @@ defmodule SubcipherWeb.PuzzleLive.Show do
   end
 
   attr :glyph, :any, required: true
-  attr :puzzle, :any, required: true
+  attr :image, :any, required: true, doc: "the picture the glyph comes from"
   attr :scale, :float, default: nil, doc: "explicit display scale"
   attr :box, :integer, default: nil, doc: "fit the glyph in a square of this size (px)"
 
   # Renders a glyph by cropping the original picture with CSS.
   defp glyph_image(assigns) do
-    %{glyph: g, puzzle: p} = assigns
+    %{glyph: g, image: image} = assigns
     pad = 2
     w = g.w + 2 * pad
     h = g.h + 2 * pad
@@ -704,8 +929,8 @@ defmodule SubcipherWeb.PuzzleLive.Show do
       [
         "width: #{px(w * scale)}",
         "height: #{px(h * scale)}",
-        "background-image: url('#{p.image_path}')",
-        "background-size: #{px(p.image_width * scale)} #{px(p.image_height * scale)}",
+        "background-image: url('#{image.path}')",
+        "background-size: #{px(image.width * scale)} #{px(image.height * scale)}",
         "background-position: #{px(-(g.x - pad) * scale)} #{px(-(g.y - pad) * scale)}"
       ]
       |> Enum.join("; ")
@@ -719,8 +944,8 @@ defmodule SubcipherWeb.PuzzleLive.Show do
 
   defp px(v), do: "#{Float.round(v * 1.0, 2)}px"
 
-  defp box_style(g, p) do
-    "left: #{g.x / p.image_width * 100}%; top: #{g.y / p.image_height * 100}%; " <>
-      "width: #{g.w / p.image_width * 100}%; height: #{g.h / p.image_height * 100}%"
+  defp box_style(g, image) do
+    "left: #{g.x / image.width * 100}%; top: #{g.y / image.height * 100}%; " <>
+      "width: #{g.w / image.width * 100}%; height: #{g.h / image.height * 100}%"
   end
 end

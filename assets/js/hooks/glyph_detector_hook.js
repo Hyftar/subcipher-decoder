@@ -6,7 +6,8 @@ const MAX_SIDE = 2000
 
 // Mounted on the element wrapping the upload <input>. Whenever a picture is
 // chosen (file picker, drag & drop or paste), symbols are detected in the
-// browser and sent to the LiveView as a "detected" event.
+// browser and sent as a "detected" event to the LiveView, or to the
+// LiveComponent the element belongs to.
 export const GlyphDetector = {
   mounted() {
     this.run = 0
@@ -19,6 +20,9 @@ export const GlyphDetector = {
       if (!file) return
       e.preventDefault()
       this.upload(this.el.dataset.upload, [file])
+      // Files added with upload() aren't exposed through input.files, so the
+      // "input" listener below can't see them: detect directly.
+      this.detect(file)
     }
     this.el.addEventListener("input", this.onInput)
     window.addEventListener("paste", this.onPaste)
@@ -30,7 +34,7 @@ export const GlyphDetector = {
 
   async detect(file) {
     const run = ++this.run
-    this.pushEvent("detecting", {})
+    this.pushEventTo(this.el, "detecting", {})
     // Let the "detecting" state render before blocking the main thread.
     await new Promise((resolve) => setTimeout(resolve, 30))
 
@@ -61,12 +65,12 @@ export const GlyphDetector = {
       })
 
       if (run !== this.run) return // a newer picture was chosen meanwhile
-      this.pushEvent("detected", { width: bitmap.width, height: bitmap.height, glyphs })
+      this.pushEventTo(this.el, "detected", { width: bitmap.width, height: bitmap.height, glyphs })
       bitmap.close()
     } catch (err) {
       if (run !== this.run) return
       console.error(err)
-      this.pushEvent("detection_failed", { message: "This picture could not be read." })
+      this.pushEventTo(this.el, "detection_failed", { message: "This picture could not be read." })
     }
   },
 }

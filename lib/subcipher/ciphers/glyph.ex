@@ -3,6 +3,7 @@ defmodule Subcipher.Ciphers.Glyph do
   use Ecto.Schema
 
   schema "glyphs" do
+    # Reading order within its image.
     field :position, :integer
     field :line, :integer
     field :space_before, :boolean, default: false
@@ -14,6 +15,7 @@ defmodule Subcipher.Ciphers.Glyph do
     field :features, :binary, redact: true
 
     belongs_to :puzzle, Subcipher.Ciphers.Puzzle
+    belongs_to :image, Subcipher.Ciphers.Image
     belongs_to :symbol, Subcipher.Ciphers.Symbol
   end
 end

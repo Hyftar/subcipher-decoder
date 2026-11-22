@@ -11,7 +11,7 @@ defmodule Subcipher.Ciphers.Analysis do
   """
 
   @grid_bytes 256
-  @default_threshold 0.038
+  @default_threshold 0.040
   @aspect_weight 0.1
   @size_weight 0.1
 
@@ -138,7 +138,8 @@ defmodule Subcipher.Ciphers.Analysis do
 
   @doc """
   Groups glyphs that look alike. Each glyph gets a `:cluster` index; clusters
-  are numbered in order of first appearance in the input list.
+  are numbered in order of first appearance in the input list. Glyphs may come
+  from several pictures (`:image_id`); sizes are compared per picture.
 
   Options:
     * `:threshold` - maximum distance to join a cluster (default #{@default_threshold}).
@@ -148,39 +149,115 @@ defmodule Subcipher.Ciphers.Analysis do
 
   def cluster(glyphs, opts) do
     threshold = Keyword.get(opts, :threshold, @default_threshold)
-    ref_h = median(Enum.map(glyphs, & &1.h))
-    items = Enum.map(glyphs, &describe(&1, ref_h))
+    roots = link(describe_all(glyphs), %{}, threshold)
+    numbering = number_new_groups(roots)
 
-    # Pass 1: greedy leader clustering.
-    clusters =
-      Enum.reduce(items, [], fn item, clusters ->
-        case nearest(clusters, item, threshold) do
-          nil -> clusters ++ [new_cluster(item)]
-          i -> List.update_at(clusters, i, &add_to_cluster(&1, item))
+    glyphs
+    |> Enum.zip(roots)
+    |> Enum.map(fn {g, root} -> Map.put(g, :cluster, Map.fetch!(numbering, root)) end)
+  end
+
+  @doc """
+  Matches newly detected glyphs (e.g. from another picture of the same
+  cipher) against `existing` glyphs, which carry a `:symbol_id`.
+
+  Existing glyphs keep their symbol: user corrections (merges, splits) are
+  respected. Each new glyph gets either the `:symbol_id` of the existing
+  symbol it links to, or `symbol_id: nil` and a `:cluster` index (numbered
+  by first appearance) grouping the new glyphs that match no existing symbol.
+
+  Glyphs are compared per picture: sizes are relative to the typical glyph
+  height of their own picture (`:image_id`), so pictures taken at different
+  scales still match.
+  """
+  def match(new_glyphs, existing, opts \\ [])
+  def match([], _existing, _opts), do: []
+
+  def match(new_glyphs, existing, opts) do
+    threshold = Keyword.get(opts, :threshold, @default_threshold)
+    # Distinct image key for the new glyphs, so their size is measured
+    # against their own picture.
+    tagged = Enum.map(new_glyphs, &Map.put(&1, :image_id, {:new_image}))
+
+    {new_items, existing_items} =
+      tagged |> Kernel.++(existing) |> describe_all() |> Enum.split(length(tagged))
+
+    seeds =
+      existing
+      |> Enum.zip(existing_items)
+      |> Enum.reduce(%{}, fn {g, item}, seeds ->
+        key = {:symbol, g.symbol_id}
+
+        case seeds do
+          %{^key => exemplars} ->
+            Map.put(
+              seeds,
+              key,
+              add_exemplar(exemplars, item, min_distance(exemplars, item), threshold)
+            )
+
+          _ ->
+            Map.put(seeds, key, [item])
         end
       end)
 
-    # Pass 2: reassign every glyph to its closest centroid, fixing glyphs
-    # that joined a cluster before its centroid settled.
-    centroids = Enum.map(clusters, &centroid/1)
+    roots = link(new_items, seeds, threshold)
+    numbering = number_new_groups(roots)
 
-    assignments =
-      Enum.map(items, fn item ->
-        centroids
-        |> Enum.with_index()
-        |> Enum.min_by(fn {c, _} -> distance(c, item) end)
-        |> elem(1)
+    new_glyphs
+    |> Enum.zip(roots)
+    |> Enum.map(fn
+      {g, {:symbol, id}} -> Map.merge(g, %{symbol_id: id, cluster: nil})
+      {g, root} -> Map.merge(g, %{symbol_id: nil, cluster: Map.fetch!(numbering, root)})
+    end)
+  end
+
+  # Describes glyphs, measuring sizes against the median glyph height of
+  # their own picture (`:image_id`, absent for a single fresh detection).
+  defp describe_all(glyphs) do
+    ref_hs =
+      glyphs
+      |> Enum.group_by(&Map.get(&1, :image_id))
+      |> Map.new(fn {image, gs} -> {image, median(Enum.map(gs, & &1.h))} end)
+
+    Enum.map(glyphs, &describe(&1, Map.fetch!(ref_hs, Map.get(&1, :image_id))))
+  end
+
+  # Greedy single linkage. A glyph joins the group with the closest member
+  # (not the closest average), so small variations between copies of a
+  # symbol (resampling, noise) can chain. Each group keeps a few varied
+  # exemplars rather than every member, to stay fast.
+  #
+  # `seeds` are pre-existing groups (`{:symbol, id} => exemplars`); new
+  # groups are keyed `{:new, n}`. Seeds are never merged together. Returns
+  # the root group key of every item.
+  defp link(items, seeds, threshold) do
+    {assignments, groups} =
+      items
+      |> Enum.with_index()
+      |> Enum.map_reduce(seeds, fn {item, i}, groups ->
+        case closest_group(groups, item, threshold) do
+          nil ->
+            {{:new, i}, Map.put(groups, {:new, i}, [item])}
+
+          {key, d} ->
+            {key, Map.update!(groups, key, &add_exemplar(&1, item, d, threshold))}
+        end
       end)
 
-    # Renumber by first appearance (some clusters may have emptied).
-    {numbering, _} =
-      Enum.reduce(assignments, {%{}, 0}, fn a, {map, next} ->
-        if Map.has_key?(map, a), do: {map, next}, else: {Map.put(map, a, next), next + 1}
-      end)
+    # Join groups that ended up within reach of each other (a glyph close to
+    # two groups only joined one of them).
+    root = link_groups(groups, threshold)
+    Enum.map(assignments, &Map.fetch!(root, &1))
+  end
 
-    glyphs
-    |> Enum.zip(assignments)
-    |> Enum.map(fn {g, a} -> Map.put(g, :cluster, Map.fetch!(numbering, a)) end)
+  # Numbers the new (non-seed) groups by first appearance.
+  defp number_new_groups(roots) do
+    roots
+    |> Enum.reject(&match?({:symbol, _}, &1))
+    |> Enum.uniq()
+    |> Enum.with_index()
+    |> Map.new()
   end
 
   @doc """
@@ -233,32 +310,68 @@ defmodule Subcipher.Ciphers.Analysis do
     end
   end
 
-  defp nearest(clusters, item, threshold) do
-    clusters
-    |> Enum.with_index()
-    |> Enum.map(fn {c, i} -> {distance(centroid(c), item), i} end)
-    |> Enum.filter(fn {d, _} -> d <= threshold end)
-    |> Enum.min_by(&elem(&1, 0), fn -> nil end)
-    |> case do
-      nil -> nil
-      {_, i} -> i
+  @max_exemplars 32
+
+  defp closest_group(groups, item, threshold) do
+    groups
+    |> Enum.map(fn {id, exemplars} -> {id, min_distance(exemplars, item)} end)
+    |> Enum.filter(fn {_, d} -> d <= threshold end)
+    |> Enum.min_by(&elem(&1, 1), fn -> nil end)
+  end
+
+  defp min_distance(exemplars, item) do
+    exemplars |> Enum.map(&distance(&1, item)) |> Enum.min()
+  end
+
+  # Only glyphs that look noticeably different from the existing exemplars
+  # are kept, so the exemplars cover the variations of the symbol.
+  defp add_exemplar(exemplars, item, d, threshold) do
+    if d > threshold / 6 and length(exemplars) < @max_exemplars,
+      do: exemplars ++ [item],
+      else: exemplars
+  end
+
+  # Single-linkage between groups: returns %{group_key => root_group_key}.
+  # Two seed groups (existing symbols) are never joined; when a new group
+  # joins a seed, the seed is the root.
+  defp link_groups(groups, threshold) do
+    keys = groups |> Map.keys() |> Enum.sort()
+    parents = Map.new(keys, &{&1, &1})
+
+    parents =
+      for a <- keys, b <- keys, a < b, reduce: parents do
+        parents ->
+          ra = find_root(parents, a)
+          rb = find_root(parents, b)
+
+          cond do
+            ra == rb -> parents
+            seed?(ra) and seed?(rb) -> parents
+            not linked?(groups[a], groups[b], threshold) -> parents
+            seed?(rb) or (not seed?(ra) and rb < ra) -> Map.put(parents, ra, rb)
+            true -> Map.put(parents, rb, ra)
+          end
+      end
+
+    Map.new(keys, &{&1, find_root(parents, &1)})
+  end
+
+  defp seed?(key), do: match?({:symbol, _}, key)
+
+  # Two groups are joined when the members of the smaller one are, on
+  # average, within reach of the other group. A single coincidental close
+  # pair (e.g. a blurry photo of a symbol resembling a sharp scan of
+  # another) is not enough to chain two symbols together.
+  defp linked?(xs, ys, threshold) do
+    {small, big} = if length(xs) <= length(ys), do: {xs, ys}, else: {ys, xs}
+    Enum.sum_by(small, &min_distance(big, &1)) / length(small) <= threshold
+  end
+
+  defp find_root(parents, id) do
+    case Map.fetch!(parents, id) do
+      ^id -> id
+      parent -> find_root(parents, parent)
     end
-  end
-
-  defp new_cluster(item), do: %{n: 1, grid: item.grid, aspect: item.aspect, size: item.size}
-
-  defp add_to_cluster(c, item) do
-    %{
-      n: c.n + 1,
-      grid: Enum.zip_with(c.grid, item.grid, &+/2),
-      aspect: c.aspect + item.aspect,
-      size: c.size + item.size
-    }
-  end
-
-  defp centroid(%{n: n} = c) do
-    %{grid: Enum.map(c.grid, &(&1 / n)), aspect: c.aspect / n, size: c.size / n}
-    |> with_norm()
   end
 
   defp median([]), do: 0

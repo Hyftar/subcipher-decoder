@@ -32,27 +32,44 @@ defmodule Subcipher.CipherFixtures do
     glyphs
   end
 
-  def puzzle_fixture(name \\ "pangram_clean", attrs \\ %{}) do
+  @doc "An uploaded picture, as passed to `Ciphers.create_puzzle/4` and `Ciphers.add_image/3`."
+  def image_upload(name) do
     payload = detection_payload(name)
 
+    %{
+      path: fixture_path("#{name}.png"),
+      ext: ".png",
+      width: payload["width"],
+      height: payload["height"]
+    }
+  end
+
+  def puzzle_fixture(name \\ "pangram_clean", attrs \\ %{}) do
     {:ok, puzzle} =
       Ciphers.create_puzzle(
         Map.merge(%{title: "Pangram"}, attrs),
-        %{
-          path: fixture_path("#{name}.png"),
-          ext: ".png",
-          width: payload["width"],
-          height: payload["height"]
-        },
+        image_upload(name),
         detected_glyphs(name)
       )
 
     puzzle
   end
 
-  @doc "Maps each symbol id to the plain letter its glyphs stand for."
+  @doc "Adds another picture to `puzzle`; returns the reloaded puzzle."
+  def add_image_fixture(puzzle, name) do
+    {:ok, puzzle, _stats} = Ciphers.add_image(puzzle, image_upload(name), detected_glyphs(name))
+    puzzle
+  end
+
+  @doc """
+  Maps each symbol id to the plain letter its glyphs stand for (pangram
+  pictures; the first picture of the puzzle is used).
+  """
   def solution(puzzle) do
+    first = hd(puzzle.images).id
+
     puzzle.glyphs
+    |> Enum.filter(&(&1.image_id == first))
     |> Enum.zip(pangram_letters())
     |> Map.new(fn {g, letter} -> {g.symbol_id, letter} end)
   end

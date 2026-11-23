@@ -126,6 +126,12 @@ ciphers:
 * **Morse code**: letters separated by a space, words by `/`, `|` or several spaces.
 * **Letter numbers (A1Z26)**: A = 1 to Z = 26 (or starting from A = 0).
 * **Reversed text**: by line, by word or the whole text.
+* **Route cipher**: a transposition: the text was written row by row in a grid of a given
+  width, then read along a route (down the columns, zigzag, or a spiral clockwise or
+  anticlockwise) from one of its corners
+  ([description](https://crypto.interactive-maths.com/route-cipher.html)). Encoding drops
+  spaces and punctuation, fills the last row with a null letter (`X`) and writes groups of
+  five; decoding ignores spaces and drops the trailing nulls.
 * **Anagram**: the characters become tiles to put back in order: drag and drop, tap two
   tiles, or <kbd>Left</kbd> / <kbd>Right</kbd> on a focused tile; the other tiles bounce
   aside to make room. Spaces are tiles too: the **Spaces** slider (from 0 to the number of
@@ -146,6 +152,7 @@ was suggested and a preview of the result; **Use** applies one.
 | Symbol substitution | frequency match; keeping the symbols that are letters already |
 | Letter numbers | A = 0 or A = 1, from the numbers present (a 0 or a 26) |
 | Reversed text | the three modes, by the English words and letter pairs they give |
+| Route cipher | every route from every corner for widths 2 to 20, the 5 with the most English-like 4-letter sequences kept |
 
 Atbash and Morse code have nothing to choose, and anagrams would need a dictionary of NPC
 names, so they don't suggest. The symbols of pictures (step 1) get a frequency match too.

@@ -23,6 +23,7 @@ defmodule Subcipher.Steps do
     MixedAlphabet,
     Morse,
     Reverse,
+    Route,
     SymbolSubstitution,
     Vigenere
   }
@@ -39,6 +40,7 @@ defmodule Subcipher.Steps do
     Morse,
     LetterNumbers,
     Reverse,
+    Route,
     Anagram
   ]
 

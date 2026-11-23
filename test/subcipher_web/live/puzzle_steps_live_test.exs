@@ -335,6 +335,30 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
       refute has_element?(view, "#suggestions-#{step.id}")
     end
 
+    test "route cipher: grid settings, and the suggestion that decodes it", %{
+      conn: conn,
+      scope: scope
+    } do
+      cipher = "XTEAN ITROB ATSYV NTEDX OEHOM EHSOE SPBUI"
+
+      {:ok, puzzle} =
+        Ciphers.create_text_puzzle(scope, %{title: "Route", input_text: cipher}, "route")
+
+      [step] = puzzle.steps
+      {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
+
+      view
+      |> form("#step-form-#{step.id}", %{
+        step: %{width: "5", route: "spiral_anticlockwise", corner: "bottom_right"}
+      })
+      |> render_change()
+
+      assert view |> element("#step-output-#{step.id}") |> render() =~
+               "ABORTTHEMISSIONYOUHAVEBEENSPOTTED"
+
+      assert has_element?(view, "#suggestions-#{step.id}")
+    end
+
     test "symbol substitution on text and editing the input", %{conn: conn, scope: scope} do
       {:ok, puzzle} =
         Ciphers.create_text_puzzle(

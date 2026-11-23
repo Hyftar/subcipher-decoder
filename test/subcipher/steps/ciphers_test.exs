@@ -8,10 +8,15 @@ defmodule Subcipher.Steps.CiphersTest do
     Caesar,
     KeywordSubstitution,
     MixedAlphabet,
+    Route,
     SymbolSubstitution
   }
 
   @sample "Hello, World! ·· 42 é\nnext LINE"
+
+  # Ciphers that write the text in a grid: spaces and line breaks are not
+  # kept (the characters are).
+  @grid_transpositions ~w(route)
 
   # Contract every registered cipher must honour; new cipher types are
   # covered automatically.
@@ -41,12 +46,19 @@ defmodule Subcipher.Steps.CiphersTest do
         end
 
         # Default parameters are valid, and decoding with them keeps the
-        # layout: length of the text, spaces and line breaks.
+        # layout: length of the text, spaces and line breaks (transpositions
+        # that write the text in a grid keep its characters, not the layout).
         changeset = Steps.params_changeset(@cipher.type(), %{})
         assert changeset.valid?
         output = @cipher.decode(@sample, Ecto.Changeset.apply_changes(changeset))
-        assert String.length(output) == String.length(@sample)
-        assert String.replace(output, ~r/\S/u, "") == String.replace(@sample, ~r/\S/u, "")
+
+        if @cipher.type() in @grid_transpositions do
+          assert Enum.sort(String.graphemes(output)) ==
+                   Enum.sort(String.graphemes(String.replace(@sample, ~r/\s/u, "")))
+        else
+          assert String.length(output) == String.length(@sample)
+          assert String.replace(output, ~r/\S/u, "") == String.replace(@sample, ~r/\S/u, "")
+        end
       end
     end
 
@@ -71,6 +83,7 @@ defmodule Subcipher.Steps.CiphersTest do
       "reverse" => %{"mode" => "words"},
       "morse" => %{},
       "letter_numbers" => %{"first" => "0"},
+      "route" => %{"width" => 4, "route" => "spiral_clockwise", "corner" => "bottom_left"},
       "mixed_alphabet" => %{
         "mapping" => Map.new(?A..?Z, &{<<&1>>, <<?A + rem(&1 - ?A + 5, 26)>>})
       },
@@ -102,7 +115,13 @@ defmodule Subcipher.Steps.CiphersTest do
         refute encoded == text and cipher.type() not in ~w(reverse),
                "#{cipher.type()} didn't encode"
 
-        assert String.upcase(cipher.decode(encoded, params)) == String.upcase(text), cipher.type()
+        expected =
+          if cipher.type() in @grid_transpositions,
+            do: String.replace(text, ~r/\s/u, ""),
+            else: text
+
+        assert String.upcase(cipher.decode(encoded, params)) == String.upcase(expected),
+               cipher.type()
       end
     end
 
@@ -153,6 +172,58 @@ defmodule Subcipher.Steps.CiphersTest do
     test "accepts letters and spaces only" do
       assert Steps.params_changeset("keyword_substitution", %{"keyword" => "Two words"}).valid?
       refute Steps.params_changeset("keyword_substitution", %{"keyword" => "abc1"}).valid?
+    end
+  end
+
+  describe "Route cipher" do
+    # The examples of https://crypto.interactive-maths.com/route-cipher.html
+    @plain "abort the mission, you have been spotted"
+
+    defp route_params(width, route, corner),
+      do: %{width: width, route: route, corner: corner, null: "X"}
+
+    test "encodes the page's examples: down the columns, spiral from the bottom right" do
+      assert String.upcase(Route.encode(@plain, route_params(5, "columns", "top_left"))) ==
+               "ATSYV NTBHS OESEO EIUBP DRMOH EOXTI NAETX"
+
+      assert String.upcase(
+               Route.encode(@plain, route_params(5, "spiral_anticlockwise", "bottom_right"))
+             ) == "XTEAN ITROB ATSYV NTEDX OEHOM EHSOE SPBUI"
+    end
+
+    test "decodes the page's example, dropping the null" do
+      assert Route.decode(
+               "RAEWE CREDX ESIDO V",
+               route_params(4, "spiral_anticlockwise", "top_right")
+             ) ==
+               "WEAREDISCOVERED"
+    end
+
+    test "routes from each corner; an incomplete last row is skipped" do
+      assert Route.route(6, 3, "zigzag", "bottom_right") ==
+               [{1, 2}, {0, 2}, {0, 1}, {1, 1}, {1, 0}, {0, 0}]
+
+      assert Route.route(9, 3, "spiral_clockwise", "top_left") ==
+               [{0, 0}, {0, 1}, {0, 2}, {1, 2}, {2, 2}, {2, 1}, {2, 0}, {1, 0}, {1, 1}]
+
+      assert Route.route(7, 3, "spiral_clockwise", "top_left") ==
+               [{0, 0}, {0, 1}, {0, 2}, {1, 2}, {2, 0}, {1, 0}, {1, 1}]
+
+      # A null letter that isn't padding (beyond the last row) is kept.
+      assert Route.decode("XXXX", route_params(2, "columns", "top_left")) == "XXX"
+    end
+
+    test "suggestions find the width, route and corner" do
+      plain = "the treasure is buried under the old oak tree near the river bend at midnight"
+      params = route_params(6, "spiral_clockwise", "bottom_left")
+      encoded = Route.encode(plain, params)
+
+      assert [best | _] = Route.suggestions(encoded, %{})
+      assert best.params == Map.delete(params, :null)
+      assert best.reason =~ "most English-like"
+
+      assert Route.decode(encoded, Map.put(best.params, :null, "X")) ==
+               String.replace(plain, " ", "")
     end
   end
 

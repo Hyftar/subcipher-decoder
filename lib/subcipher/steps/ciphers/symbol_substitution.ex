@@ -10,6 +10,11 @@ defmodule Subcipher.Steps.Ciphers.SymbolSubstitution do
   def type, do: "symbol_substitution"
 
   @impl true
+  def osrs_usage,
+    do:
+      "Symbol alphabets: The Writing's on the Wall symbols, the Lunar alphabet, the VPSG code (What Lies Below), Secrets of the North's strange cipher. Start from pictures to detect the symbols."
+
+  @impl true
   def name, do: "Symbol substitution"
 
   @impl true

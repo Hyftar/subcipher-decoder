@@ -6,6 +6,11 @@ defmodule Subcipher.Steps.Ciphers.Caesar do
   def type, do: "caesar"
 
   @impl true
+  def osrs_usage,
+    do:
+      "Treasure Trails cipher clues (NPC names), the Venom-riddled note (ROT13), Demonic Pacts League reveal."
+
+  @impl true
   def name, do: "Caesar cipher"
 
   @impl true

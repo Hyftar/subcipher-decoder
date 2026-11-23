@@ -29,20 +29,25 @@ defmodule Subcipher.Steps.Cipher do
   Field types:
 
     * `:integer`, `:string` - a plain input;
+    * `:select` - one of `options` (`[{label, value}]`, values are strings);
     * `:letter_map` - a map from cipher letters "A".."Z" to plain letters,
       edited as an alphabet grid.
     * `:symbol_map` - a map from any character of the step's input to a
       substitution, edited as a grid of the input's distinct characters.
+    * `:permutation` - an order of the input's characters ("2,0,1"),
+      edited by dragging the characters as tiles.
   """
 
   @type field :: %{
           required(:name) => atom(),
-          required(:type) => :integer | :string | :letter_map | :symbol_map,
+          required(:type) =>
+            :integer | :string | :select | :letter_map | :symbol_map | :permutation,
           required(:label) => String.t(),
           required(:default) => term(),
           optional(:help) => String.t(),
           optional(:min) => integer(),
-          optional(:max) => integer()
+          optional(:max) => integer(),
+          optional(:options) => [{String.t(), String.t()}]
         }
 
   @typedoc "A suggested set of parameters, e.g. the most likely Caesar shifts."
@@ -66,7 +71,10 @@ defmodule Subcipher.Steps.Cipher do
   @doc "Optional parameter suggestions for `input`, best first."
   @callback candidates(input :: String.t(), params :: map()) :: [candidate()]
 
-  @optional_callbacks summary: 1, candidates: 2
+  @doc "Optional: where this cipher is used in Old School RuneScape."
+  @callback osrs_usage() :: String.t()
+
+  @optional_callbacks summary: 1, candidates: 2, osrs_usage: 0
 
   defmacro __using__(_opts) do
     quote do

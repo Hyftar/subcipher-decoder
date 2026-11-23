@@ -15,15 +15,32 @@ defmodule Subcipher.Steps do
   alias Subcipher.Steps.Step
 
   alias Subcipher.Steps.Ciphers.{
+    Anagram,
+    Atbash,
     Caesar,
     KeywordSubstitution,
+    LetterNumbers,
     LetterSubstitution,
-    SymbolSubstitution
+    Morse,
+    Reverse,
+    SymbolSubstitution,
+    Vigenere
   }
 
   # Available cipher types, in the order offered to the user. To add one,
   # implement Subcipher.Steps.Cipher and list it here.
-  @ciphers [SymbolSubstitution, LetterSubstitution, Caesar, KeywordSubstitution]
+  @ciphers [
+    SymbolSubstitution,
+    LetterSubstitution,
+    Caesar,
+    KeywordSubstitution,
+    Vigenere,
+    Atbash,
+    Morse,
+    LetterNumbers,
+    Reverse,
+    Anagram
+  ]
 
   def ciphers, do: @ciphers
 
@@ -62,17 +79,26 @@ defmodule Subcipher.Steps do
     defaults = Map.new(fields, &{&1.name, &1.default})
     types = Map.new(fields, &{&1.name, ecto_type(&1.type)})
 
-    # Emptied number inputs cast to nil: numbers are always required.
-    required = for %{type: :integer, name: name} <- fields, do: name
+    # Emptied inputs cast to nil: numbers and choices are always required.
+    required = for %{type: type, name: name} <- fields, type in [:integer, :select], do: name
 
-    {defaults, types}
-    |> Changeset.cast(params || %{}, Map.keys(types))
-    |> Changeset.validate_required(required)
+    changeset =
+      {defaults, types}
+      |> Changeset.cast(params || %{}, Map.keys(types))
+      |> Changeset.validate_required(required)
+
+    fields
+    |> Enum.filter(&(&1.type == :select))
+    |> Enum.reduce(changeset, fn field, cs ->
+      Changeset.validate_inclusion(cs, field.name, Enum.map(field.options, &elem(&1, 1)))
+    end)
     |> cipher.validate()
   end
 
   defp ecto_type(:integer), do: :integer
   defp ecto_type(:string), do: :string
+  defp ecto_type(:select), do: :string
+  defp ecto_type(:permutation), do: :string
   defp ecto_type(:letter_map), do: {:map, :string}
   defp ecto_type(:symbol_map), do: {:map, :string}
 

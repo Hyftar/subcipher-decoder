@@ -10,6 +10,9 @@ defmodule Subcipher.Steps.Ciphers.KeywordSubstitution do
   def type, do: "keyword_substitution"
 
   @impl true
+  def osrs_usage, do: "Fallen From Grace: the back of the Warning note (keyword FAITH)."
+
+  @impl true
   def name, do: "Keyword substitution"
 
   @impl true

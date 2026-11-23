@@ -24,8 +24,20 @@ defmodule Subcipher.Steps.CiphersTest do
         assert is_binary(@cipher.name()) and is_binary(@cipher.description())
 
         for field <- @cipher.fields() do
-          assert field.type in [:integer, :string, :letter_map, :symbol_map]
+          assert field.type in [
+                   :integer,
+                   :string,
+                   :select,
+                   :letter_map,
+                   :symbol_map,
+                   :permutation
+                 ]
+
           assert Map.has_key?(field, :default) and is_binary(field.label)
+
+          if field.type == :select do
+            assert field.default in Enum.map(field.options, &elem(&1, 1))
+          end
         end
 
         # Default parameters are valid, and decoding with them keeps the
@@ -39,7 +51,9 @@ defmodule Subcipher.Steps.CiphersTest do
     end
 
     test "letter ciphers leave everything but letters untouched" do
-      for cipher <- Steps.ciphers(), cipher.type() != "symbol_substitution" do
+      letter_wise = ~w(caesar keyword_substitution letter_substitution vigenere atbash)
+
+      for cipher <- Steps.ciphers(), cipher.type() in letter_wise do
         params = cipher.type() |> Steps.params_changeset(%{}) |> Ecto.Changeset.apply_changes()
         output = cipher.decode(@sample, params)
 
@@ -151,6 +165,12 @@ defmodule Subcipher.Steps.CiphersTest do
     test "symbol_frequencies/1 lists distinct symbols, most frequent first" do
       assert Alphabet.symbol_frequencies("☀[ ☀ · \n♪") == [{"☀", 2}, {"[", 1}, {"♪", 1}]
     end
+  end
+
+  test "select fields only accept their options" do
+    assert Steps.params_changeset("reverse", %{"mode" => "words"}).valid?
+    refute Steps.params_changeset("reverse", %{"mode" => "sideways"}).valid?
+    refute Steps.params_changeset("letter_numbers", %{"first" => ""}).valid?
   end
 
   test "english_score/1 prefers English text" do

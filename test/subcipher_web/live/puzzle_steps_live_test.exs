@@ -186,6 +186,45 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
       assert Ciphers.list_puzzles() == []
     end
 
+    test "choice settings (select fields) and OSRS usage notes", %{conn: conn} do
+      {:ok, puzzle} =
+        Ciphers.create_text_puzzle(%{title: "Names", input_text: "Yenrab Lahsram"}, "reverse")
+
+      [step] = puzzle.steps
+      {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
+      assert output(view, step) =~ "marshaL barneY"
+      assert has_element?(view, "#step-#{step.id}", "OSRS")
+
+      view |> form("#step-form-#{step.id}", step: %{mode: "words"}) |> render_change()
+      assert output(view, step) =~ "barneY marshaL"
+    end
+
+    test "anagram tiles are reordered, and can be reset", %{conn: conn} do
+      {:ok, puzzle} =
+        Ciphers.create_text_puzzle(%{title: "Clue", input_text: "I CORD"}, "anagram")
+
+      [step] = puzzle.steps
+      {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
+
+      # One tile per character, spaces included, in the input's order.
+      assert has_element?(view, "#anagram-#{step.id}[phx-hook=AnagramTiles]")
+      for i <- 0..5, do: assert(has_element?(view, "#tile-#{step.id}-#{i}"))
+      assert output(view, step) =~ "I CORD"
+
+      # What the AnagramTiles hook sends after a drag and drop.
+      view
+      |> element("#anagram-#{step.id}")
+      |> render_hook("update_step", %{step_id: step.id, step: %{order: "5,3,4,0,2,1"}})
+
+      assert output(view, step) =~ "DORIC"
+      assert hd(Steps.list_steps(puzzle)).params == %{"order" => "5,3,4,0,2,1"}
+      # Tiles are rendered in the new order.
+      assert view |> element("#anagram-#{step.id} li:first-child") |> render() =~ "D"
+
+      view |> element("#anagram-reset-#{step.id}") |> render_click()
+      assert output(view, step) =~ "I CORD"
+    end
+
     test "symbol substitution on text and editing the input", %{conn: conn} do
       {:ok, puzzle} =
         Ciphers.create_text_puzzle(%{title: "Stars", input_text: "☀♪Θ ☀"}, "symbol_substitution")

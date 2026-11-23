@@ -5,14 +5,14 @@ defmodule SubcipherWeb.StepComponents do
 
   Parameter forms are generated from each cipher's `fields/0`, so a new
   cipher type gets its form without touching this module, as long as it
-  uses the existing field types (`:integer`, `:string`, `:letter_map`,
-  `:symbol_map`).
+  uses the existing field types (`:integer`, `:string`, `:select`,
+  `:letter_map`, `:symbol_map`).
   """
   use SubcipherWeb, :html
 
   alias Subcipher.Steps
   alias Subcipher.Steps.Alphabet
-  alias Subcipher.Steps.Ciphers.SymbolSubstitution
+  alias Subcipher.Steps.Ciphers.{Anagram, SymbolSubstitution}
 
   ## Navigation
 
@@ -105,7 +105,7 @@ defmodule SubcipherWeb.StepComponents do
           id={"add-step-#{cipher.type()}"}
           phx-click="add_step"
           phx-value-type={cipher.type()}
-          class="group text-left rounded-xl border border-base-300 p-4 transition hover:border-primary hover:bg-primary/5 hover:-translate-y-0.5 hover:shadow-sm"
+          class="group flex flex-col justify-start text-left rounded-xl border border-base-300 p-4 transition hover:border-primary hover:bg-primary/5 hover:-translate-y-0.5 hover:shadow-sm"
         >
           <span class="flex items-center justify-between font-semibold">
             {cipher.name()}
@@ -115,6 +115,7 @@ defmodule SubcipherWeb.StepComponents do
             />
           </span>
           <span class="block mt-1 text-sm text-base-content/60">{cipher.description()}</span>
+          <.osrs_usage cipher={cipher} class="mt-2" />
         </button>
       </div>
     </section>
@@ -215,7 +216,10 @@ defmodule SubcipherWeb.StepComponents do
           </button>
         </div>
       </div>
-      <p class="-mt-3 text-sm text-base-content/60">{@cipher.description()}</p>
+      <div class="-mt-3 space-y-1">
+        <p class="text-sm text-base-content/60">{@cipher.description()}</p>
+        <.osrs_usage cipher={@cipher} />
+      </div>
 
       <div class="space-y-1.5">
         <h3 class="text-xs font-semibold uppercase tracking-wider text-base-content/50">
@@ -340,6 +344,74 @@ defmodule SubcipherWeb.StepComponents do
     """
   end
 
+  defp param_field(%{field: %{type: :select}} = assigns) do
+    ~H"""
+    <div class="max-w-sm">
+      <.input field={@form_field} type="select" label={@field.label} options={@field.options} />
+      <p :if={@field[:help]} class="-mt-1 text-xs text-base-content/60">{@field.help}</p>
+    </div>
+    """
+  end
+
+  # The input's characters as tiles, in the current order. Reordered by drag
+  # and drop, by tapping two tiles, or with ←/→ on a focused tile (see the
+  # AnagramTiles hook, which sends the new order as "update_step").
+  defp param_field(%{field: %{type: :permutation}} = assigns) do
+    tiles = Anagram.tiles(assigns.input)
+    order = Anagram.resolve_order(assigns.form_field.value, length(tiles))
+    tiles = List.to_tuple(tiles)
+    assigns = assign(assigns, tiles: Enum.map(order, &{&1, elem(tiles, &1)}))
+
+    ~H"""
+    <fieldset class="space-y-2">
+      <legend class="text-sm font-medium">{@field.label}</legend>
+      <input type="hidden" name={@form_field.name} value={@form_field.value} />
+      <p :if={@tiles == []} class="text-sm text-base-content/60">Nothing to rearrange yet.</p>
+      <ol
+        :if={@tiles != []}
+        id={"anagram-#{@step_id}"}
+        phx-hook="AnagramTiles"
+        data-step-id={@step_id}
+        aria-label="Characters, in reading order"
+        class="flex flex-wrap gap-1.5 select-none"
+      >
+        <li
+          :for={{index, char} <- @tiles}
+          id={"tile-#{@step_id}-#{index}"}
+          data-index={index}
+          draggable="true"
+          tabindex="0"
+          role="button"
+          aria-label={if char =~ ~r/^\s$/u, do: "space", else: char}
+          class={[
+            "grid place-items-center min-w-10 h-11 px-2 rounded-lg border-2 border-b-4 font-mono text-xl uppercase",
+            "cursor-grab active:cursor-grabbing transition-all duration-150",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+            if(char =~ ~r/^\s$/u,
+              do: "border-dashed border-base-300 text-base-content/30",
+              else: "border-base-300 bg-base-100 hover:border-primary/60 hover:-translate-y-0.5"
+            )
+          ]}
+        >
+          {if char =~ ~r/^\s$/u, do: "␣", else: char}
+        </li>
+      </ol>
+      <div class="flex flex-wrap items-center gap-3 text-xs text-base-content/60">
+        <span>Drag a tile, or tap two tiles; ← / → move a focused tile.</span>
+        <button
+          type="button"
+          id={"anagram-reset-#{@step_id}"}
+          class="btn btn-ghost btn-xs"
+          phx-click={JS.push("update_step", value: %{step_id: @step_id, step: %{order: ""}})}
+        >
+          <.icon name="hero-arrow-uturn-left" class="size-3.5" /> Reset
+        </button>
+      </div>
+      <.field_errors form_field={@form_field} />
+    </fieldset>
+    """
+  end
+
   # One small input per cipher letter, with how often it appears in the
   # step's input as a hint.
   defp param_field(%{field: %{type: :letter_map}} = assigns) do
@@ -426,6 +498,27 @@ defmodule SubcipherWeb.StepComponents do
       </div>
       <.field_errors form_field={@form_field} />
     </fieldset>
+    """
+  end
+
+  attr :cipher, :atom, required: true
+  attr :class, :string, default: nil
+
+  # Where the cipher is used in Old School RuneScape, if known.
+  defp osrs_usage(assigns) do
+    assigns =
+      assign(assigns,
+        usage:
+          if(Steps.implements?(assigns.cipher, :osrs_usage, 0), do: assigns.cipher.osrs_usage())
+      )
+
+    ~H"""
+    <p :if={@usage} class={["flex items-start gap-1.5 text-xs text-base-content/60", @class]}>
+      <span class="shrink-0 rounded bg-warning/15 px-1 py-px text-[10px] font-bold tracking-wide text-warning">
+        OSRS
+      </span>
+      <span>{@usage}</span>
+    </p>
     """
   end
 

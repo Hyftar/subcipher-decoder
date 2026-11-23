@@ -217,12 +217,65 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
       |> render_hook("update_step", %{step_id: step.id, step: %{order: "5,3,4,0,2,1"}})
 
       assert output(view, step) =~ "DORIC"
-      assert hd(Steps.list_steps(puzzle)).params == %{"order" => "5,3,4,0,2,1"}
+      assert hd(Steps.list_steps(puzzle)).params == %{"order" => "5,3,4,0,2,1", "spaces" => nil}
       # Tiles are rendered in the new order.
       assert view |> element("#anagram-#{step.id} li:first-child") |> render() =~ "D"
 
       view |> element("#anagram-reset-#{step.id}") |> render_click()
       assert output(view, step) =~ "I CORD"
+    end
+
+    test "anagram spaces slider: 0 to letters − 1", %{conn: conn} do
+      {:ok, puzzle} =
+        Ciphers.create_text_puzzle(%{title: "Clue", input_text: "CARPET AHOY"}, "anagram")
+
+      [step] = puzzle.steps
+      {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
+
+      # Follows the input until moved: 1 space, out of at most 9 (10 letters).
+      slider = "#step-#{step.id}_spaces"
+      assert has_element?(view, "#{slider}[type=range][min='0'][max='9'][value='1']")
+      assert has_element?(view, "#tile-#{step.id}-10")
+
+      view |> form("#step-form-#{step.id}", step: %{spaces: "0"}) |> render_change()
+      assert has_element?(view, "#{slider}[value='0']")
+      refute has_element?(view, "#tile-#{step.id}-10")
+      assert output(view, step) =~ "CARPETAHOY"
+
+      view |> form("#step-form-#{step.id}", step: %{spaces: "3"}) |> render_change()
+      assert has_element?(view, "#tile-#{step.id}-12")
+      assert hd(Steps.list_steps(puzzle)).params["spaces"] == 3
+    end
+
+    test "moving tiles keeps the number of spaces", %{conn: conn} do
+      {:ok, puzzle} =
+        Ciphers.create_text_puzzle(%{title: "Clue", input_text: "CARPET AHOY"}, "anagram")
+
+      [step] = puzzle.steps
+      {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
+      view |> form("#step-form-#{step.id}", step: %{spaces: "3"}) |> render_change()
+
+      # Tiles: CARPET␣AHOY␣␣ (11 and 12 are the extra spaces). The
+      # AnagramTiles hook only sends the order: move a space to the front.
+      view
+      |> element("#anagram-#{step.id}")
+      |> render_hook("update_step", %{
+        step_id: step.id,
+        step: %{order: "11,0,1,2,3,4,5,6,7,8,9,10,12"}
+      })
+
+      assert hd(Steps.list_steps(puzzle)).params["spaces"] == 3
+      assert has_element?(view, "#step-#{step.id}_spaces[value='3']")
+      assert has_element?(view, "#tile-#{step.id}-12")
+
+      assert output(view, step) =~ "CARPET AHOY"
+      refute output(view, step) =~ "CARPET AHOY "
+
+      # Reset only puts the letters back: the spaces stay.
+      view |> element("#anagram-reset-#{step.id}") |> render_click()
+      assert hd(Steps.list_steps(puzzle)).params["spaces"] == 3
+      assert has_element?(view, "#tile-#{step.id}-12")
+      assert view |> element("#anagram-#{step.id} li:first-child") |> render() =~ "C"
     end
 
     test "symbol substitution on text and editing the input", %{conn: conn} do

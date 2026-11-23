@@ -79,8 +79,12 @@ defmodule Subcipher.Steps do
     defaults = Map.new(fields, &{&1.name, &1.default})
     types = Map.new(fields, &{&1.name, ecto_type(&1.type)})
 
-    # Emptied inputs cast to nil: numbers and choices are always required.
-    required = for %{type: type, name: name} <- fields, type in [:integer, :select], do: name
+    # Emptied inputs cast to nil: numbers and choices are required, unless
+    # their default is nil (meaning "automatic").
+    required =
+      for %{type: type, name: name, default: default} <- fields,
+          type in [:integer, :select] and default != nil,
+          do: name
 
     changeset =
       {defaults, types}
@@ -162,11 +166,13 @@ defmodule Subcipher.Steps do
   end
 
   @doc """
-  Updates a step's parameters. Returns `{:error, changeset}` (from
+  Updates some of a step's parameters: the ones not given keep their saved
+  value (e.g. the anagram tiles only send their order, which must not reset
+  the number of spaces). Returns `{:error, changeset}` (from
   `params_changeset/2`) when they are invalid.
   """
   def update_params(%Step{} = step, params) do
-    changeset = params_changeset(step.type, params)
+    changeset = params_changeset(step.type, Map.merge(step.params, stringify_keys(params)))
 
     if changeset.valid? do
       params = changeset |> Changeset.apply_changes() |> stringify_keys()

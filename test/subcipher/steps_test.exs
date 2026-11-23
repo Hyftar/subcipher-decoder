@@ -33,6 +33,16 @@ defmodule Subcipher.StepsTest do
     assert hd(Steps.list_steps(puzzle)).params == %{"shift" => 13}
   end
 
+  test "update_params/2 keeps the parameters that aren't given", %{puzzle: puzzle} do
+    {:ok, step} = Steps.add_step(puzzle, "anagram")
+    {:ok, step} = Steps.update_params(step, %{"spaces" => "2"})
+    {:ok, step} = Steps.update_params(step, %{"order" => "1,0"})
+    assert step.params == %{"spaces" => 2, "order" => "1,0"}
+
+    {:ok, step} = Steps.update_params(step, %{spaces: 0})
+    assert step.params == %{"spaces" => 0, "order" => "1,0"}
+  end
+
   test "run/2 chains steps, each decoding the previous output", %{puzzle: puzzle} do
     {:ok, caesar} = Steps.add_step(puzzle, "caesar")
     {:ok, caesar} = Steps.update_params(caesar, %{"shift" => "1"})

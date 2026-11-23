@@ -79,7 +79,8 @@ ciphers:
 * **Reversed text** — by line, by word or the whole text.
 * **Anagram** — the characters become tiles to put back in order: drag and drop, tap two
   tiles, or `←`/`→` on a focused tile; the other tiles bounce aside to make room. Spaces are
-  tiles too (one dragged to the end disappears).
+  tiles too: the **Spaces** slider (0 to letters − 1, by default the clue's) sets how many
+  word breaks the solution has; spaces left at either end are ignored.
 
 ### Old School RuneScape
 
@@ -110,8 +111,9 @@ symbols not deciphered yet, passes through.
    optionally `validate/1`, `summary/1` and `candidates/2` (key suggestions).
 2. List it in `@ciphers` in `Subcipher.Steps`.
 
-The parameter form is generated from `fields/0` (`:integer`, `:string`, `:letter_map` or `:symbol_map`
-fields), and `test/subcipher/steps/ciphers_test.exs` checks every registered cipher
+The parameter form is generated from `fields/0`: `:integer` (an input, or a slider with
+`control: :range`, whose `max` may depend on the step's input), `:string`, `:select`,
+`:letter_map`, `:symbol_map` or `:permutation` fields (see `Subcipher.Steps.Cipher`), and `test/subcipher/steps/ciphers_test.exs` checks every registered cipher
 against the behaviour's contract automatically. `Subcipher.Steps.Alphabet` has helpers
 for letter-wise ciphers (`map_letters/2`, `english_score/1`).
 

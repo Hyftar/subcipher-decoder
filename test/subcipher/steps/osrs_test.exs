@@ -187,6 +187,28 @@ defmodule Subcipher.Steps.OsrsTest do
       assert Anagram.decode("abc", %{order: "2,9"}) == "cab"
     end
 
+    test "the number of spaces is a setting, from 0 to letters − 1" do
+      # One word from a two-word clue: no space tile at all.
+      assert Anagram.tiles("CARPET AHOY", 0) |> Enum.join() == "CARPETAHOY"
+      order = "1,3,8,5,7,4,0,6,2,9"
+      assert Anagram.decode("CARPET AHOY", %{order: order, spaces: 0}) == "APOTHECARY"
+      assert Anagram.decode("CARPET AHOY", %{order: "", spaces: 0}) == "CARPETAHOY"
+
+      # More words than the clue: extra space tiles come last.
+      assert Anagram.tiles("AN EARL", 2) |> Enum.join() == "AN EARL "
+      assert Anagram.decode("AN EARL", %{order: "0,1,2,3,7,4,5,6", spaces: 2}) == "AN E ARL"
+
+      # Clamped to letters − 1; nil follows the input (one per word gap).
+      assert Anagram.max_spaces("I CORD") == 4
+      assert Anagram.space_count("I CORD", 99) == 4
+      assert Anagram.space_count("I CORD", nil) == 1
+      assert Anagram.space_count("A", nil) == 0
+
+      assert Steps.params_changeset("anagram", %{"spaces" => "2"}).valid?
+      assert Steps.params_changeset("anagram", %{"spaces" => ""}).valid?
+      refute Steps.params_changeset("anagram", %{"spaces" => "-1"}).valid?
+    end
+
     test "orders are validated" do
       assert Steps.params_changeset("anagram", %{"order" => "2,0,1"}).valid?
       refute Steps.params_changeset("anagram", %{"order" => "2,0,0"}).valid?

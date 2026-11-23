@@ -28,7 +28,10 @@ defmodule Subcipher.Steps.Cipher do
 
   Field types:
 
-    * `:integer`, `:string` - a plain input;
+    * `:integer`, `:string` - a plain input. An `:integer` field can have
+      `control: :range` (a slider), and its `max` can be a function of the
+      step's input. With a `nil` default it is optional ("automatic"), and
+      `auto` (a function of the input) tells which value that stands for;
     * `:select` - one of `options` (`[{label, value}]`, values are strings);
     * `:letter_map` - a map from cipher letters "A".."Z" to plain letters,
       edited as an alphabet grid.
@@ -46,7 +49,9 @@ defmodule Subcipher.Steps.Cipher do
           required(:default) => term(),
           optional(:help) => String.t(),
           optional(:min) => integer(),
-          optional(:max) => integer(),
+          optional(:max) => integer() | (input :: String.t() -> integer()),
+          optional(:control) => :range,
+          optional(:auto) => (input :: String.t() -> term()),
           optional(:options) => [{String.t(), String.t()}]
         }
 

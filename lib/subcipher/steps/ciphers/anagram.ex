@@ -1,11 +1,17 @@
 defmodule Subcipher.Steps.Ciphers.Anagram do
   @moduledoc """
-  Anagram: the characters of the text were shuffled. The `order` parameter
-  is the order in which to read the input's characters (spaces included),
-  as positions: "5,0,1" reads the 6th, 1st, then 2nd character. Positions
-  that don't exist (the input changed) are dropped and characters not
-  placed yet follow in their original order. The result is trimmed, so
-  spaces dragged to the end disappear.
+  Anagram: the letters of the text were shuffled.
+
+  The text becomes tiles: its letters (every non-space character) and
+  `spaces` space tiles, 0 to letters − 1, so the solution can have another
+  number of words than the clue. By default (`spaces` nil) there is one
+  space tile per gap between the input's words, placed in the gaps.
+
+  `order` is the order in which to read the tiles, as positions: "5,0,1"
+  reads the 6th, 1st, then 2nd tile. Positions that don't exist (the input
+  or the number of spaces changed) are dropped and tiles not placed yet
+  follow in their original order. In the result, spaces next to each other
+  count as one and spaces at either end are dropped.
   """
   use Subcipher.Steps.Cipher
 
@@ -26,12 +32,26 @@ defmodule Subcipher.Steps.Ciphers.Anagram do
 
   @impl true
   def fields do
-    [%{name: :order, type: :permutation, label: "Order of the characters", default: ""}]
+    [
+      %{
+        name: :spaces,
+        type: :integer,
+        control: :range,
+        label: "Spaces",
+        default: nil,
+        min: 0,
+        max: &max_spaces/1,
+        auto: &input_spaces/1,
+        help: "Number of word breaks in the solution (it doesn't have to match the clue)."
+      },
+      %{name: :order, type: :permutation, label: "Order of the characters", default: ""}
+    ]
   end
 
   @impl true
   def validate(changeset) do
     changeset
+    |> validate_number(:spaces, greater_than_or_equal_to: 0)
     |> validate_format(:order, ~r/^(\d+(,\d+)*)?$/, message: "must be positions like 2,0,1")
     |> validate_change(:order, fn :order, order ->
       positions = parse(order)
@@ -39,8 +59,49 @@ defmodule Subcipher.Steps.Ciphers.Anagram do
     end)
   end
 
-  @doc "The characters (graphemes) of the input that can be reordered."
-  def tiles(text), do: String.graphemes(text || "")
+  @doc "Number of letters (non-space characters) of the input."
+  def letter_count(text), do: text |> letters() |> length()
+
+  @doc "Most spaces the solution can have: one less than the letters."
+  def max_spaces(text), do: max(letter_count(text) - 1, 0)
+
+  @doc "Number of spaces in the input: one per gap between its words."
+  def input_spaces(text) do
+    text
+    |> String.trim()
+    |> String.split(~r/\s+/u, trim: true)
+    |> length()
+    |> Kernel.-(1)
+    |> max(0)
+  end
+
+  @doc "The number of space tiles: `spaces`, or the input's when nil, within range."
+  def space_count(text, spaces) do
+    (spaces || input_spaces(text)) |> min(max_spaces(text)) |> max(0)
+  end
+
+  @doc """
+  The tiles of the input: its letters in order, with `space_count` space
+  tiles placed in the gaps between its words, then any extra ones at the end.
+  """
+  def tiles(text, spaces \\ nil) do
+    count = space_count(text, spaces)
+
+    words = (text || "") |> String.trim() |> String.split(~r/\s+/u, trim: true)
+    gaps = max(length(words) - 1, 0)
+
+    {tiles, _} =
+      words
+      |> Enum.with_index()
+      |> Enum.flat_map_reduce(count, fn {word, i}, left ->
+        letters = String.graphemes(word)
+        if i < gaps and left > 0, do: {letters ++ [" "], left - 1}, else: {letters, left}
+      end)
+
+    tiles ++ List.duplicate(" ", count - min(count, gaps))
+  end
+
+  defp letters(text), do: (text || "") |> String.graphemes() |> Enum.reject(&(&1 =~ ~r/^\s$/u))
 
   @doc """
   The full order of `count` tiles from a stored `order`: valid, unique
@@ -66,19 +127,20 @@ defmodule Subcipher.Steps.Ciphers.Anagram do
   end
 
   @impl true
-  def decode(text, %{order: order}) do
-    case parse(order) do
+  def decode(text, %{order: order} = params) do
+    spaces = Map.get(params, :spaces)
+
+    if parse(order) == [] and is_nil(spaces) do
       # Not rearranged yet: the text as it is.
-      [] ->
-        text
+      text
+    else
+      tiles = text |> tiles(spaces) |> List.to_tuple()
 
-      _ ->
-        tiles = text |> tiles() |> List.to_tuple()
-
-        order
-        |> resolve_order(tuple_size(tiles))
-        |> Enum.map_join(&elem(tiles, &1))
-        |> String.trim()
+      order
+      |> resolve_order(tuple_size(tiles))
+      |> Enum.map_join(&elem(tiles, &1))
+      |> String.split(" ", trim: true)
+      |> Enum.join(" ")
     end
   end
 

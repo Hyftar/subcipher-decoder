@@ -267,6 +267,7 @@ defmodule SubcipherWeb.StepComponents do
             form_field={@form[field.name]}
             step_id={@step.id}
             input={@result.input}
+            params={@result.params}
           />
         </.form>
         <pre
@@ -318,6 +319,50 @@ defmodule SubcipherWeb.StepComponents do
   attr :form_field, Phoenix.HTML.FormField, required: true
   attr :step_id, :integer, required: true
   attr :input, :string, required: true, doc: "the step's input text"
+  attr :params, :map, default: %{}, doc: "the step's current (valid) parameters"
+
+  # A slider; its maximum can depend on the step's input.
+  defp param_field(%{field: %{type: :integer, control: :range}} = assigns) do
+    %{field: field, input: input} = assigns
+    max = if is_function(field[:max], 1), do: field.max.(input), else: field[:max]
+
+    value =
+      case assigns.form_field.value do
+        nil -> if is_function(field[:auto], 1), do: field.auto.(input), else: field[:min]
+        "" -> field[:min]
+        value -> value
+      end
+
+    assigns = assign(assigns, max: max, value: min(to_integer(value), max))
+
+    ~H"""
+    <div class="max-w-sm space-y-1">
+      <label for={@form_field.id} class="flex items-center justify-between text-sm font-medium">
+        {@field.label}
+        <span id={"#{@form_field.id}-value"} class="badge badge-sm badge-primary tabular-nums">
+          {@value}
+        </span>
+      </label>
+      <input
+        type="range"
+        id={@form_field.id}
+        name={@form_field.name}
+        min={@field[:min]}
+        max={@max}
+        value={@value}
+        step="1"
+        disabled={@max == @field[:min]}
+        phx-debounce="100"
+        class="range range-primary range-sm w-full"
+      />
+      <div class="flex justify-between text-[10px] text-base-content/50 tabular-nums">
+        <span>{@field[:min]}</span><span>{@max}</span>
+      </div>
+      <p :if={@field[:help]} class="text-xs text-base-content/60">{@field.help}</p>
+      <.field_errors form_field={@form_field} />
+    </div>
+    """
+  end
 
   defp param_field(%{field: %{type: :integer}} = assigns) do
     ~H"""
@@ -357,7 +402,7 @@ defmodule SubcipherWeb.StepComponents do
   # and drop, by tapping two tiles, or with ←/→ on a focused tile (see the
   # AnagramTiles hook, which sends the new order as "update_step").
   defp param_field(%{field: %{type: :permutation}} = assigns) do
-    tiles = Anagram.tiles(assigns.input)
+    tiles = Anagram.tiles(assigns.input, assigns.params[:spaces])
     order = Anagram.resolve_order(assigns.form_field.value, length(tiles))
     tiles = List.to_tuple(tiles)
     assigns = assign(assigns, tiles: Enum.map(order, &{&1, elem(tiles, &1)}))
@@ -554,6 +599,15 @@ defmodule SubcipherWeb.StepComponents do
       >{@text}</pre>
     </div>
     """
+  end
+
+  defp to_integer(value) when is_integer(value), do: value
+
+  defp to_integer(value) do
+    case Integer.parse(to_string(value)) do
+      {i, _} -> i
+      :error -> 0
+    end
   end
 
   defp summary(cipher, params) do

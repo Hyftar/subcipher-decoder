@@ -13,6 +13,9 @@ services:
     image: ${SUBCIPHER_IMAGE:-ghcr.io/hyftar/subcipher-decoder:latest}
     ports:
       - "${APP_PORT:-4000}:4000"
+    networks:
+      - default
+      - cia-overlay
     environment:
       DATABASE_URL: ecto://subcipher:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@db/subcipher
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:?set SECRET_KEY_BASE in deploy/.env}
@@ -61,6 +64,10 @@ services:
         constraints: [node.role == manager]
       restart_policy:
         condition: any
+
+networks:
+  cia-overlay:
+    external: true
 
 volumes:
   pgdata:

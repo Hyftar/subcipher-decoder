@@ -46,26 +46,38 @@ if config_env() != :test do
         _ -> :if_available
       end
 
+    # Certificate checks for STARTTLS (tls_options) and implicit TLS
+    # (sockopts, SMTP_SSL=true). gen_smtp defaults to `depth: 0`, which
+    # rejects any certificate signed through an intermediate authority (most
+    # providers, e.g. Brevo: "max_path_length_reached"): allow real chains.
+    tls_options =
+      if System.get_env("SMTP_TLS_VERIFY") == "false" do
+        [verify: :verify_none]
+      else
+        [
+          verify: :verify_peer,
+          depth: 10,
+          cacerts: :public_key.cacerts_get(),
+          server_name_indication: String.to_charlist(smtp_host),
+          customize_hostname_check: [
+            match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+          ]
+        ]
+      end
+
+    ssl = System.get_env("SMTP_SSL") == "true"
+
     config :subcipher,
            Subcipher.Mailer,
            [
              adapter: Swoosh.Adapters.SMTP,
              relay: smtp_host,
              port: String.to_integer(System.get_env("SMTP_PORT", "587")),
-             ssl: System.get_env("SMTP_SSL") == "true",
+             ssl: ssl,
              tls: tls,
-             tls_options:
-               if(System.get_env("SMTP_TLS_VERIFY") == "false",
-                 do: [verify: :verify_none],
-                 else: [
-                   verify: :verify_peer,
-                   cacerts: :public_key.cacerts_get(),
-                   server_name_indication: String.to_charlist(smtp_host),
-                   customize_hostname_check: [
-                     match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
-                   ]
-                 ]
-               ),
+             tls_options: tls_options,
+             # The socket is TLS from the start (implicit TLS) only with ssl.
+             sockopts: if(ssl, do: tls_options, else: []),
              retries: 1,
              no_mx_lookups: true
            ] ++

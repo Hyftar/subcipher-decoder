@@ -4,7 +4,8 @@
 //   ← / →               previous / next character of the text
 //   ↑ / ↓, Tab          previous / next symbol of the symbol key
 //   Escape              deselect
-// Ignored while typing in a form field.
+// Ignored while typing in a form field, or inside [data-own-keys] (widgets
+// with their own keys, like the crop editor).
 //
 // The element's `data-scroll-to` names the selected glyph (or key row); it is
 // scrolled into view when the selection changes, so keyboard navigation
@@ -17,7 +18,7 @@ export const CipherKeys = {
     this.onKeydown = (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return
       const t = e.target
-      if (t.closest?.("input, textarea, select, [contenteditable]")) return
+      if (t.closest?.("input, textarea, select, [contenteditable], [data-own-keys]")) return
 
       const isChar = e.key.length === 1 && e.key !== " "
       if (!isChar && !NAV_KEYS.has(e.key)) return

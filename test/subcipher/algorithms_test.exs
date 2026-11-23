@@ -97,6 +97,26 @@ defmodule Subcipher.AlgorithmsTest do
       assert last.value == "HELLO WORLD"
     end
 
+    test "the symbol key uses the chosen samples, as trimmed" do
+      puzzle = solved_pictures_puzzle()
+      symbol = Enum.find(puzzle.symbols, &(&1.letter == "E"))
+      [_, glyph | _] = Enum.filter(puzzle.glyphs, &(&1.symbol_id == symbol.id))
+      :ok = Ciphers.set_sample(glyph)
+
+      {:ok, glyph} =
+        Ciphers.trim_glyph(glyph, %{x: glyph.x, y: glyph.y, w: glyph.w - 1, h: glyph.h})
+
+      {:ok, algorithm} = Algorithms.create_from_puzzle(Ciphers.get_puzzle!(puzzle.id))
+      entry = Enum.find(algorithm.symbol_key, &(&1["letter"] == "E"))
+
+      assert Map.take(entry, ~w(x y w h)) == %{
+               "x" => glyph.x,
+               "y" => glyph.y,
+               "w" => glyph.w,
+               "h" => glyph.h
+             }
+    end
+
     test "letters without a symbol are reported as missing" do
       puzzle = solved_pictures_puzzle()
       q = Enum.find(puzzle.symbols, &(&1.letter == "Q"))

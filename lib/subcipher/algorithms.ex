@@ -95,8 +95,8 @@ defmodule Subcipher.Algorithms do
     end
   end
 
-  # The symbols with a letter, most frequent first, each with its first
-  # glyph as sample.
+  # The symbols with a letter, most frequent first, each with its sample
+  # glyph (`Ciphers.sample_glyph/2`).
   defp symbol_key_entries(puzzle) do
     by_symbol = Enum.group_by(puzzle.glyphs, & &1.symbol_id)
 
@@ -104,7 +104,7 @@ defmodule Subcipher.Algorithms do
     |> Enum.filter(&(not &1.ignored and is_binary(&1.letter) and &1.letter != ""))
     |> Enum.filter(&Map.has_key?(by_symbol, &1.id))
     |> Enum.sort_by(&{-length(by_symbol[&1.id]), &1.id})
-    |> Enum.map(&{&1, hd(by_symbol[&1.id])})
+    |> Enum.map(&{&1, Ciphers.sample_glyph(&1, by_symbol[&1.id])})
   end
 
   # The key's entries, and copies of the pictures their glyphs come from (so

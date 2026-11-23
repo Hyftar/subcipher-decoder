@@ -117,6 +117,42 @@ defmodule SubcipherWeb.PuzzleLiveTest do
       assert view |> element("#progress") |> render() =~ "0 / 26"
     end
 
+    test "the glyphs panel: choose the sample, trim a crop", %{conn: conn, puzzle: puzzle} do
+      {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
+      [first | _] = puzzle.glyphs
+      [_, second, third] = Enum.filter(puzzle.glyphs, &(&1.symbol_id == first.symbol_id))
+
+      view
+      |> element("#symbol-#{first.symbol_id} button[phx-click=select_symbol]")
+      |> render_click()
+
+      view |> element("#glyphs-button") |> render_click()
+      assert has_element?(view, "#glyph-panel")
+      for g <- [first, second, third], do: assert(has_element?(view, "#occurrence-#{g.id}"))
+
+      # The crop editor shows the sample until another occurrence is picked.
+      assert has_element?(view, "#glyph-trim[data-glyph-id='#{first.id}']")
+      refute has_element?(view, "#set-sample")
+      view |> element("#occurrence-#{second.id}") |> render_click()
+      assert has_element?(view, "#glyph-trim[data-glyph-id='#{second.id}']")
+
+      view |> element("#set-sample") |> render_click()
+
+      assert Subcipher.Ciphers.get_puzzle!(puzzle.id).symbols
+             |> Enum.find(&(&1.id == first.symbol_id))
+             |> Map.fetch!(:sample_glyph_id) == second.id
+
+      # The black and white view, and trimming (sent by the GlyphTrim hook).
+      view |> element("#view-mask") |> render_click()
+      assert has_element?(view, "#glyph-trim[data-view=mask]")
+
+      render_hook(view, "trim_glyph", %{id: second.id, x: second.x + 1, y: second.y, w: 2, h: 3})
+      assert has_element?(view, "#glyph-trim[data-box*='\"w\":2']")
+      view |> element("#reset-trim") |> render_click()
+      refute has_element?(view, "#reset-trim")
+      assert has_element?(view, "#glyph-trim[data-box*='\"w\":#{second.w}']")
+    end
+
     test "solving with the symbol key reveals the message", %{
       conn: conn,
       puzzle: puzzle,

@@ -128,3 +128,44 @@ export function layout(lines, opts = {}) {
 
   return { width, height, items }
 }
+
+// The ink mask (see inkMask in glyph_detector.js, `maskWidth` wide) inside
+// `box` ({x, y, w, h}), with a `pad`-pixel empty margin around it: what a
+// glyph looks like as a "font" character. Returns {data, w, h}.
+export function cropMask(mask, maskWidth, box, pad = 0) {
+  const w = box.w + 2 * pad
+  const h = box.h + 2 * pad
+  const maskHeight = mask.length / maskWidth
+  const data = new Uint8Array(w * h)
+  for (let y = 0; y < box.h; y++) {
+    const sy = box.y + y
+    if (sy < 0 || sy >= maskHeight) continue
+    for (let x = 0; x < box.w; x++) {
+      const sx = box.x + x
+      if (sx < 0 || sx >= maskWidth) continue
+      data[(y + pad) * w + x + pad] = mask[sy * maskWidth + sx]
+    }
+  }
+  return { data, w, h }
+}
+
+// RGBA pixels of a cropped mask: `rgb` where there is ink, transparent
+// elsewhere.
+export function paintMask(crop, rgb) {
+  const out = new Uint8ClampedArray(crop.data.length * 4)
+  for (let i = 0; i < crop.data.length; i++) {
+    if (!crop.data[i]) continue
+    out.set([rgb[0], rgb[1], rgb[2], 255], i * 4)
+  }
+  return out
+}
+
+// The ink colour of RGBA pixels under a cropped mask of the same size: the
+// per-channel median of the inked pixels (null without any).
+export function inkSamples(data, crop) {
+  const samples = []
+  for (let i = 0; i < crop.data.length; i++) {
+    if (crop.data[i]) samples.push([data[i * 4], data[i * 4 + 1], data[i * 4 + 2]])
+  }
+  return samples
+}

@@ -38,7 +38,7 @@ defmodule SubcipherWeb.Layouts do
     <header class="border-b border-base-300 bg-base-100/80 backdrop-blur sticky top-0 z-30">
       <div class="mx-auto max-w-7xl flex items-center justify-between px-4 sm:px-6 lg:px-8 h-14">
         <.link navigate={~p"/"} class="flex items-center gap-2 group">
-          <span class="grid place-items-center size-8 rounded-lg bg-primary text-primary-content font-mono font-bold transition group-hover:rotate-6">
+          <span class="grid place-items-center size-8 rounded-lg bg-primary text-primary-content font-mono font-bold text-2xl transition group-hover:rotate-6">
             ψ
           </span>
           <span class="font-semibold tracking-tight">Subcipher</span>

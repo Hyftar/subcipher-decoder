@@ -4,7 +4,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync, writeFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { detectGlyphs, inkIsLight, toGrayscale } from "../js/glyph_detector.js"
+import { detectGlyphs, inkIsLight, inkMask, toGrayscale } from "../js/glyph_detector.js"
 
 const fixtures = fileURLToPath(new URL("../../test/fixtures/", import.meta.url))
 const plain = readFileSync(fixtures + "pangram.txt", "utf8")
@@ -71,4 +71,38 @@ test("handles light ink on dark background", () => {
 
 test("blank image has no glyphs", () => {
   assert.deepEqual(detectGlyphs(new Uint8Array(100 * 50).fill(255), 100, 50), [])
+})
+
+test("the black and white pass (ink mask) of light pixel-art symbols", () => {
+  const [width, height] = readFileSync(fixtures + "pixel_glyphs.size", "utf8").trim().split(" ").map(Number)
+  const rgba = new Uint8Array(readFileSync(fixtures + "pixel_glyphs.rgba"))
+  const mask = inkMask(rgba, width, height)
+  const { glyphs } = JSON.parse(readFileSync(fixtures + "pixel_glyphs.glyphs.json", "utf8"))
+
+  // Every glyph has ink; nearly all of the ink is inside the glyphs (the
+  // rest: specks detection drops).
+  const inside = new Uint8Array(width * height)
+  for (const g of glyphs) {
+    let ink = 0
+    for (let y = g.y; y < g.y + g.h; y++) {
+      for (let x = g.x; x < g.x + g.w; x++) {
+        inside[y * width + x] = 1
+        ink += mask[y * width + x]
+      }
+    }
+    assert.ok(ink > 0.15 * g.w * g.h, `glyph at ${g.x},${g.y} has ink`)
+  }
+  let outside = 0
+  let total = 0
+  for (let i = 0; i < mask.length; i++) {
+    total += mask[i]
+    if (!inside[i]) outside += mask[i]
+  }
+  assert.ok(outside < 0.05 * total, `${outside} of ${total} ink pixels outside glyphs`)
+
+  // The pink is ink, the brown background and the black shadows are not.
+  for (let i = 0; i < mask.length; i++) {
+    const [r, g, b] = [rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]]
+    if (r < 40 && g < 40 && b < 40) assert.equal(mask[i], 0)
+  }
 })

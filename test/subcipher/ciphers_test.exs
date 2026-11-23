@@ -69,6 +69,88 @@ defmodule Subcipher.CiphersTest do
              Ciphers.detach_glyph(Enum.find(puzzle.glyphs, &(&1.symbol_id == new_symbol.id)))
   end
 
+  describe "samples and trimming" do
+    setup do
+      puzzle = puzzle_fixture()
+
+      symbol =
+        Enum.max_by(puzzle.symbols, &Enum.count(puzzle.glyphs, fn g -> g.symbol_id == &1.id end))
+
+      glyphs = Enum.filter(puzzle.glyphs, &(&1.symbol_id == symbol.id))
+      %{puzzle: puzzle, symbol: symbol, glyphs: glyphs}
+    end
+
+    test "the sample is the first occurrence until another is chosen", %{
+      puzzle: puzzle,
+      symbol: symbol,
+      glyphs: [first, second | _] = glyphs
+    } do
+      assert Ciphers.sample_glyph(symbol, glyphs) == first
+      assert :ok = Ciphers.set_sample(second)
+
+      puzzle = Ciphers.get_puzzle!(puzzle.id)
+      symbol = Enum.find(puzzle.symbols, &(&1.id == symbol.id))
+      assert Ciphers.sample_glyph(symbol, glyphs).id == second.id
+
+      # A sample detached from the symbol is no longer its sample.
+      {:ok, _} = Ciphers.detach_glyph(second)
+      puzzle = Ciphers.get_puzzle!(puzzle.id)
+      symbol = Enum.find(puzzle.symbols, &(&1.id == symbol.id))
+      remaining = Enum.filter(puzzle.glyphs, &(&1.symbol_id == symbol.id))
+      assert Ciphers.sample_glyph(symbol, remaining).id == first.id
+    end
+
+    test "regrouping keeps the chosen samples and the trimmed crops", %{
+      puzzle: puzzle,
+      glyphs: [_, second | _]
+    } do
+      :ok = Ciphers.set_sample(second)
+
+      {:ok, _} =
+        Ciphers.trim_glyph(second, %{"x" => second.x + 1, "y" => second.y, "w" => 3, "h" => 4})
+
+      {:ok, regrouped} = Ciphers.regroup(puzzle, Ciphers.default_threshold())
+      glyph = Enum.find(regrouped.glyphs, &(&1.position == second.position))
+      assert {glyph.x, glyph.w, glyph.h} == {second.x + 1, 3, 4}
+
+      assert glyph.detected_box == %{
+               "x" => second.x,
+               "y" => second.y,
+               "w" => second.w,
+               "h" => second.h
+             }
+
+      symbol = Enum.find(regrouped.symbols, &(&1.id == glyph.symbol_id))
+      assert symbol.sample_glyph_id == glyph.id
+    end
+
+    test "trim_glyph/2 changes the crop inside the picture; reset_glyph_box/1 restores it", %{
+      puzzle: puzzle,
+      glyphs: [glyph | _]
+    } do
+      image = Enum.find(puzzle.images, &(&1.id == glyph.image_id))
+      detected = %{"x" => glyph.x, "y" => glyph.y, "w" => glyph.w, "h" => glyph.h}
+
+      {:ok, trimmed} =
+        Ciphers.trim_glyph(glyph, %{"x" => "#{glyph.x + 2}", "y" => glyph.y, "w" => 5, "h" => 6})
+
+      assert {trimmed.x, trimmed.y, trimmed.w, trimmed.h} == {glyph.x + 2, glyph.y, 5, 6}
+      assert trimmed.detected_box == detected
+
+      # Trimming again keeps the box detection found; boxes stay in the picture.
+      {:ok, wide} = Ciphers.trim_glyph(trimmed, %{x: -10, y: glyph.y, w: image.width + 50, h: 0})
+      assert {wide.x, wide.w, wide.h} == {0, image.width, 1}
+      assert wide.detected_box == detected
+
+      assert {:error, :invalid_box} =
+               Ciphers.trim_glyph(wide, %{"x" => "a", "y" => 1, "w" => 1, "h" => 1})
+
+      {:ok, reset} = Ciphers.reset_glyph_box(wide)
+      assert {reset.x, reset.y, reset.w, reset.h} == {glyph.x, glyph.y, glyph.w, glyph.h}
+      assert reset.detected_box == nil
+    end
+  end
+
   test "regroup/2 re-clusters and keeps unanimous letters" do
     puzzle = puzzle_fixture()
 

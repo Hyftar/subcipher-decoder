@@ -13,6 +13,9 @@ defmodule Subcipher.Ciphers.Glyph do
     field :h, :integer
     # 16x16 ink coverage grid, used to (re)cluster symbols.
     field :features, :binary, redact: true
+    # The box found by detection, kept when the user trims the glyph (so the
+    # crop can be reset): %{"x", "y", "w", "h"}; nil = never trimmed.
+    field :detected_box, :map
 
     belongs_to :puzzle, Subcipher.Ciphers.Puzzle
     belongs_to :image, Subcipher.Ciphers.Image

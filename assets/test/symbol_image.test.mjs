@@ -1,7 +1,17 @@
 // Run with:  mix test.js
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { borderSamples, estimateBackground, layout, parseHex, recolor, toHex } from "../js/symbol_image.js"
+import {
+  borderSamples,
+  cropMask,
+  estimateBackground,
+  inkSamples,
+  layout,
+  paintMask,
+  parseHex,
+  recolor,
+  toHex,
+} from "../js/symbol_image.js"
 
 const glyph = (w, h = 40, scale = 1) => ({ t: "glyph", w, h, scale })
 
@@ -60,4 +70,26 @@ test("layout wraps long lines at spaces", () => {
   const rows = new Set(items.map((i) => i.y))
   assert.equal(rows.size, 4) // 3 words of 100 + 2 spaces = 340 per row
   assert.ok(width <= 350)
+})
+
+test("a glyph's mask: cropped to its box, painted in the ink colour", () => {
+  // 5x4 mask, ink at (1,1), (2,1) and (4,3) (outside the box).
+  const mask = new Uint8Array(20)
+  mask[1 * 5 + 1] = 1
+  mask[1 * 5 + 2] = 1
+  mask[3 * 5 + 4] = 1
+  const crop = cropMask(mask, 5, { x: 1, y: 1, w: 2, h: 2 }, 1)
+  assert.equal(crop.w, 4)
+  assert.equal(crop.h, 4)
+  assert.deepEqual([...crop.data], [0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+
+  const painted = paintMask(crop, [200, 10, 20])
+  assert.deepEqual([...painted.slice(5 * 4, 6 * 4)], [200, 10, 20, 255])
+  assert.equal(painted[0 * 4 + 3], 0) // transparent elsewhere
+
+  // The ink colour comes from the pixels under the mask.
+  const pixels = new Uint8ClampedArray(16 * 4).fill(90)
+  pixels.set([250, 120, 200, 255], 5 * 4)
+  pixels.set([240, 110, 190, 255], 6 * 4)
+  assert.deepEqual(estimateBackground(inkSamples(pixels, crop)), [250, 120, 200])
 })

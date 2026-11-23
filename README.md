@@ -45,6 +45,12 @@ Detection isn't perfect, so the puzzle page lets you fix it:
 * **Split this one off**: one occurrence was grouped with the wrong symbol.
 * **Ignore**: hide noise or decorations from the text.
 * **Grouping tolerance**: re-cluster everything (letters are kept when a new group agrees).
+* **Glyphs**: the selected symbol's occurrences. Choose the **sample** (the one shown in
+  the symbol key and drawn by algorithms) and trim the crop of any occurrence by dragging
+  its edges (or focus an edge and use the arrow keys, <kbd>Shift</kbd> for 5 px);
+  **Reset crop** restores the box detection found. The crop can be checked on the
+  picture itself or on its black and white pass (the ink mask, by the same thresholding
+  as detection). Trimming changes what is shown, not the descriptor used for grouping.
 
 Keyboard shortcuts on the symbols:
 
@@ -127,6 +133,9 @@ encode and decode any text (`/algorithms/:id`, listed on the home page):
   repainted in it (blended at the edges of the ink), so this works best on plain
   backgrounds. Drawn in the browser (`assets/js/symbol_image.js`,
   `assets/js/hooks/symbol_image_hook.js`).
+* the **Two colours** style draws the black and white pass of the pictures as a font:
+  the glyphs in one colour (detected: the median of their ink, or chosen) on a plain
+  background or a transparent one.
 
 Its settings can't be changed: edit the puzzle and make a new algorithm instead.
 

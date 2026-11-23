@@ -364,3 +364,10 @@ export function detectGlyphs(gray, width, height, opts = {}) {
     f: toBase64(coverageGrid(labels, width, g)),
   }))
 }
+
+// The black and white pass of a picture: 1 for ink, 0 for background, by the
+// same thresholding as detection (so light-on-dark pictures work too). Used
+// as a mask to draw glyphs in any colour.
+export function inkMask(rgba, width, height, opts = {}) {
+  return binarize(toGrayscale(rgba, width, height), width, height, opts)
+}

@@ -305,7 +305,8 @@ defmodule Subcipher.Ciphers do
           y: g.y,
           w: g.w,
           h: g.h,
-          features: g.features
+          features: g.features,
+          detected_box: Map.get(g, :detected_box)
         }
       end)
 
@@ -420,6 +421,96 @@ defmodule Subcipher.Ciphers do
     end
   end
 
+  ## Samples and trimming
+
+  @doc """
+  The occurrence shown for `symbol` among its `glyphs` (in reading order):
+  the one chosen with `set_sample/2`, else the first.
+  """
+  def sample_glyph(%Symbol{sample_glyph_id: id}, glyphs) do
+    (id && Enum.find(glyphs, &(&1.id == id))) || List.first(glyphs)
+  end
+
+  @doc "Makes `glyph` the occurrence shown for its symbol (and used by algorithms)."
+  def set_sample(%Glyph{} = glyph) do
+    from(s in Symbol, where: s.id == ^glyph.symbol_id)
+    |> Repo.update_all(set: [sample_glyph_id: glyph.id])
+
+    :ok
+  end
+
+  @doc """
+  Changes the crop of `glyph` to `box` (`x`, `y`, `w`, `h`, string or atom
+  keys), kept inside its picture. The box found by detection is remembered,
+  for `reset_glyph_box/1`. The glyph's descriptor (used for grouping) is
+  unchanged.
+  """
+  def trim_glyph(%Glyph{} = glyph, box) do
+    image = Repo.get!(Image, glyph.image_id)
+
+    with {:ok, %{"x" => x, "y" => y, "w" => w, "h" => h}} <- cast_box(box),
+         x0 = clamp(x, 0, image.width - 1),
+         y0 = clamp(y, 0, image.height - 1),
+         x1 = clamp(x + w, x0 + 1, image.width),
+         y1 = clamp(y + h, y0 + 1, image.height) do
+      glyph
+      |> Ecto.Changeset.change(
+        x: x0,
+        y: y0,
+        w: x1 - x0,
+        h: y1 - y0,
+        detected_box: glyph.detected_box || box_map(glyph)
+      )
+      |> Repo.update()
+    end
+  end
+
+  @doc "Restores the box detection found for `glyph`."
+  def reset_glyph_box(%Glyph{detected_box: nil} = glyph), do: {:ok, glyph}
+
+  def reset_glyph_box(%Glyph{detected_box: box} = glyph) do
+    glyph
+    |> Ecto.Changeset.change(
+      x: box["x"],
+      y: box["y"],
+      w: box["w"],
+      h: box["h"],
+      detected_box: nil
+    )
+    |> Repo.update()
+  end
+
+  defp box_map(g), do: %{"x" => g.x, "y" => g.y, "w" => g.w, "h" => g.h}
+
+  defp cast_box(box) do
+    values =
+      for key <- ~w(x y w h) do
+        case Map.get(box, key, Map.get(box, String.to_existing_atom(key))) do
+          v when is_integer(v) -> v
+          v when is_float(v) -> round(v)
+          v when is_binary(v) -> parse_int(v)
+          _ -> nil
+        end
+      end
+
+    case values do
+      [x, y, w, h] when is_integer(x) and is_integer(y) and is_integer(w) and is_integer(h) ->
+        {:ok, %{"x" => x, "y" => y, "w" => w, "h" => h}}
+
+      _ ->
+        {:error, :invalid_box}
+    end
+  end
+
+  defp parse_int(v) do
+    case Integer.parse(v) do
+      {n, ""} -> n
+      _ -> nil
+    end
+  end
+
+  defp clamp(v, lo, hi), do: v |> max(lo) |> min(hi)
+
   @doc """
   Re-clusters all glyphs of a puzzle with a new similarity threshold.
 
@@ -455,11 +546,36 @@ defmodule Subcipher.Ciphers do
       glyphs = Enum.map(analyzed, &Map.put(&1, :symbol_id, nil))
       insert_glyphs(repo, puzzle.id, glyphs, &Map.fetch!(carried, &1))
     end)
+    |> Multi.run(:samples, fn repo, _ -> carry_samples(repo, puzzle) end)
     |> Repo.transaction()
     |> case do
       {:ok, _} -> {:ok, get_puzzle!(puzzle.id)}
       {:error, _, reason, _} -> {:error, reason}
     end
+  end
+
+  # The chosen samples stay samples of the symbol their glyph now belongs
+  # to (glyphs are reinserted: they are found again by position).
+  defp carry_samples(repo, puzzle) do
+    sample_ids =
+      for s <- puzzle.symbols, s.sample_glyph_id, into: MapSet.new(), do: s.sample_glyph_id
+
+    positions = for g <- puzzle.glyphs, MapSet.member?(sample_ids, g.id), do: g.position
+
+    from(g in Glyph,
+      where: g.puzzle_id == ^puzzle.id and g.position in ^positions,
+      order_by: g.position,
+      select: {g.id, g.symbol_id}
+    )
+    |> repo.all()
+    |> Enum.uniq_by(&elem(&1, 1))
+    |> Enum.each(fn {glyph_id, symbol_id} ->
+      repo.update_all(from(s in Symbol, where: s.id == ^symbol_id),
+        set: [sample_glyph_id: glyph_id]
+      )
+    end)
+
+    {:ok, nil}
   end
 
   defp unanimous([v | rest]), do: if(Enum.all?(rest, &(&1 == v)), do: v, else: nil)

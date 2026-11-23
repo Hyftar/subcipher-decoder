@@ -71,7 +71,7 @@ defmodule SubcipherWeb.AlgorithmLiveTest do
     |> Jason.decode!()
   end
 
-  test "the encoded image: lines, alignment and background colour", %{conn: conn} do
+  test "the encoded image: lines, style, alignment and colours", %{conn: conn} do
     puzzle = puzzle_fixture()
 
     for {symbol_id, letter} <- solution(puzzle) do
@@ -91,21 +91,44 @@ defmodule SubcipherWeb.AlgorithmLiveTest do
            ] =
              spec["lines"]
 
-    assert spec["align"] == "center" and spec["background"] == "auto"
+    assert %{"style" => "original", "align" => "center", "background" => "auto"} = spec
 
     view |> element("#align-right") |> render_click()
     assert image_spec(view)["align"] == "right"
     assert has_element?(view, "#align-right[aria-pressed=true]")
 
-    # The hook reports the glyphs' background; a colour can be chosen instead.
-    render_hook(view, "detected_background", %{color: "#6b5a3c"})
+    # The hook reports the glyphs' colours; a background can be chosen instead.
+    render_hook(view, "detected_colours", %{background: "#6b5a3c", ink: nil})
     assert has_element?(view, "#background-auto span[style*='#6b5a3c']")
+    refute has_element?(view, "#ink-color")
 
-    view |> form("#image-options", %{color: "#FFEEDD"}) |> render_change()
+    view
+    |> form("#image-options")
+    |> render_change(%{"_target" => ["background"], "background" => "#FFEEDD"})
+
     assert image_spec(view)["background"] == "#ffeedd"
 
     view |> element("#background-auto") |> render_click()
     assert image_spec(view)["background"] == "auto"
+
+    # Two colours: the black and white pass, in a glyph colour, on a plain
+    # or transparent background.
+    view |> element("#style-mask") |> render_click()
+    render_hook(view, "detected_colours", %{background: "#6b5a3c", ink: "#f0a0c0"})
+    assert has_element?(view, "#ink-auto span[style*='#f0a0c0']")
+
+    view
+    |> form("#image-options")
+    |> render_change(%{"_target" => ["ink"], "ink" => "#112233", "background" => "#6b5a3c"})
+
+    assert %{"style" => "mask", "ink" => "#112233", "background" => "auto"} = image_spec(view)
+
+    view |> element("#background-transparent") |> render_click()
+    assert image_spec(view)["transparent"] == true
+    assert has_element?(view, "#background-color[disabled]")
+
+    view |> element("#ink-auto") |> render_click()
+    assert image_spec(view)["ink"] == "auto"
   end
 
   test "space and new line keys of the symbol keyboard", %{conn: conn} do

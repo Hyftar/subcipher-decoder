@@ -10,6 +10,9 @@ defmodule Subcipher.Ciphers.Symbol do
 
     belongs_to :puzzle, Subcipher.Ciphers.Puzzle
     has_many :glyphs, Subcipher.Ciphers.Glyph
+    # The occurrence shown for the symbol and used by algorithms (nil = the
+    # first one in reading order).
+    belongs_to :sample_glyph, Subcipher.Ciphers.Glyph
 
     timestamps(type: :utc_datetime)
   end

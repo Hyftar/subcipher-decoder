@@ -94,7 +94,7 @@ defmodule Subcipher.MixProject do
         "phx.digest"
       ],
       "test.js": [
-        "cmd node --test assets/test/glyph_detector.test.mjs assets/test/symbol_image.test.mjs"
+        "cmd node --test assets/test/glyph_detector.test.mjs assets/test/symbol_image.test.mjs assets/test/glyph_trim.test.mjs"
       ],
       precommit: [
         "compile --warnings-as-errors",

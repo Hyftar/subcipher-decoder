@@ -38,12 +38,18 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
     |> assign(:texts, %{"encode" => "", "decode" => ""})
     # Pictures, decode: the symbols composed with the keyboard.
     |> assign(:symbols, [])
-    # Pictures, encode: the composed image's options; the background is
-    # "auto" (detected from the glyphs, reported by the SymbolImage hook) or
-    # a colour chosen by hand.
-    |> assign(:image_align, "center")
-    |> assign(:image_background, "auto")
-    |> assign(:detected_background, nil)
+    # Pictures, encode: the composed image's options. Its style is "original"
+    # (the crops as they are) or "mask" (their black and white pass, in the
+    # ink colour); colours are "auto" (detected in the glyphs, reported by
+    # the SymbolImage hook) or chosen by hand.
+    |> assign(:image, %{
+      style: "original",
+      align: "center",
+      background: "auto",
+      ink: "auto",
+      transparent: false
+    })
+    |> assign(:detected, %{background: nil, ink: nil})
   end
 
   @impl true
@@ -151,21 +157,44 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
     {:noreply, socket |> assign(:symbols, []) |> assign_trace()}
   end
 
-  def handle_event("image_options", %{"color" => "#" <> hex = color}, socket)
-      when byte_size(hex) == 6,
-      do: {:noreply, assign(socket, :image_background, String.downcase(color))}
+  # The colour inputs of the image options: only the one changed (`_target`)
+  # is taken, so the other stays "auto" (detected).
+  def handle_event("image_options", %{"_target" => [field]} = params, socket)
+      when field in ~w(background ink) do
+    case params[field] do
+      "#" <> hex = colour when byte_size(hex) == 6 ->
+        {:noreply, update_image(socket, String.to_existing_atom(field), String.downcase(colour))}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
 
   def handle_event("image_options", _params, socket), do: {:noreply, socket}
 
   def handle_event("image_align", %{"align" => align}, socket)
       when align in ~w(left center right),
-      do: {:noreply, assign(socket, :image_align, align)}
+      do: {:noreply, update_image(socket, :align, align)}
 
-  def handle_event("background_auto", _params, socket),
-    do: {:noreply, assign(socket, :image_background, "auto")}
+  def handle_event("image_style", %{"style" => style}, socket)
+      when style in ~w(original mask),
+      do: {:noreply, update_image(socket, :style, style)}
 
-  def handle_event("detected_background", %{"color" => color}, socket),
-    do: {:noreply, assign(socket, :detected_background, color)}
+  def handle_event("image_auto", %{"colour" => field}, socket)
+      when field in ~w(background ink),
+      do: {:noreply, update_image(socket, String.to_existing_atom(field), "auto")}
+
+  def handle_event("image_transparent", _params, socket),
+    do: {:noreply, update_image(socket, :transparent, !socket.assigns.image.transparent)}
+
+  def handle_event("detected_colours", colours, socket) do
+    detected =
+      Map.new(~w(background ink)a, fn key ->
+        {key, valid_colour(colours[Atom.to_string(key)]) || socket.assigns.detected[key]}
+      end)
+
+    {:noreply, assign(socket, :detected, detected)}
+  end
 
   def handle_event("delete", _params, socket) do
     {:ok, _} = Algorithms.delete_algorithm(socket.assigns.algorithm)
@@ -175,6 +204,14 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
      |> put_flash(:info, "Algorithm deleted.")
      |> push_navigate(to: ~p"/")}
   end
+
+  defp update_image(socket, key, value), do: update(socket, :image, &Map.put(&1, key, value))
+
+  defp valid_colour("#" <> hex = colour) when byte_size(hex) == 6 do
+    if hex =~ ~r/^[0-9a-fA-F]{6}$/, do: String.downcase(colour)
+  end
+
+  defp valid_colour(_), do: nil
 
   defp add_token(socket, token) do
     socket |> update(:symbols, &(&1 ++ [token])) |> assign_trace()
@@ -326,9 +363,8 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
                     <.symbol_image
                       algorithm={@algorithm}
                       tokens={stage.value}
-                      align={@image_align}
-                      background={@image_background}
-                      detected={@detected_background}
+                      options={@image}
+                      detected={@detected}
                     />
                   <% stage.kind == :symbols -> %>
                     <.symbols_view
@@ -482,12 +518,15 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
 
   attr :algorithm, :any, required: true
   attr :tokens, :list, required: true
-  attr :align, :string, required: true
-  attr :background, :string, required: true, doc: "\"auto\" or a #rrggbb colour"
-  attr :detected, :any, required: true, doc: "the background detected by the hook"
+
+  attr :options, :map,
+    required: true,
+    doc: "style, align, background / ink (\"auto\" or #rrggbb), transparent"
+
+  attr :detected, :map, required: true, doc: "the colours detected by the hook"
 
   # The encoded symbols as one image, drawn by the SymbolImage hook, with its
-  # options (alignment, background colour) and a PNG download.
+  # options (style, alignment, colours) and a PNG download.
   defp symbol_image(assigns) do
     assigns = assign(assigns, :spec, Jason.encode!(image_spec(assigns)))
 
@@ -501,6 +540,29 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
     >
       <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
         <div class="flex items-center gap-2">
+          <span class="text-base-content/70">Style</span>
+          <div id="image-style" class="join">
+            <button
+              :for={
+                {style, label, title} <- [
+                  {"original", "Original", "The glyphs as they are in the pictures"},
+                  {"mask", "Two colours",
+                   "The black and white pass of the pictures, as a font: glyphs in one colour on a plain background"}
+                ]
+              }
+              type="button"
+              id={"style-#{style}"}
+              class={["btn btn-xs join-item", @options.style == style && "btn-primary"]}
+              phx-click="image_style"
+              phx-value-style={style}
+              aria-pressed={to_string(@options.style == style)}
+              title={title}
+            >
+              {label}
+            </button>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
           <span class="text-base-content/70">Align</span>
           <div id="image-align" class="join">
             <button
@@ -513,10 +575,10 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
               }
               type="button"
               id={"align-#{align}"}
-              class={["btn btn-xs join-item", @align == align && "btn-primary"]}
+              class={["btn btn-xs join-item", @options.align == align && "btn-primary"]}
               phx-click="image_align"
               phx-value-align={align}
-              aria-pressed={to_string(@align == align)}
+              aria-pressed={to_string(@options.align == align)}
               aria-label={"Align #{align}"}
               title={"Align #{align}"}
             >
@@ -524,32 +586,6 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
             </button>
           </div>
         </div>
-        <form id="image-options" phx-change="image_options" class="flex items-center gap-2">
-          <span class="text-base-content/70">Background</span>
-          <button
-            type="button"
-            id="background-auto"
-            phx-click="background_auto"
-            class={["btn btn-xs", @background == "auto" && "btn-primary"]}
-            title="The colour around the glyphs in the pictures"
-          >
-            <span
-              class="inline-block size-3 rounded-sm ring-1 ring-base-content/30"
-              style={"background: #{@detected || "transparent"}"}
-            ></span>
-            Detected
-          </button>
-          <input
-            type="color"
-            id="background-color"
-            name="color"
-            value={if @background == "auto", do: @detected || "#ffffff", else: @background}
-            class="size-7 cursor-pointer rounded border border-base-300 bg-transparent"
-            aria-label="Background colour"
-            title="Choose a background colour"
-          />
-          <span :if={@background != "auto"} class="font-mono text-xs">{@background}</span>
-        </form>
         <button
           type="button"
           id="download-image"
@@ -559,6 +595,42 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
           <.icon name="hero-arrow-down-tray" class="size-4" /> Download PNG
         </button>
       </div>
+      <form
+        id="image-options"
+        phx-change="image_options"
+        class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm"
+      >
+        <.colour_choice
+          :if={@options.style == "mask"}
+          field="ink"
+          label="Glyphs"
+          value={@options.ink}
+          detected={@detected.ink}
+          title="The colour of the ink in the pictures"
+        />
+        <div class="flex items-center gap-2">
+          <.colour_choice
+            field="background"
+            label="Background"
+            value={@options.background}
+            detected={@detected.background}
+            disabled={@options.style == "mask" and @options.transparent}
+            title="The colour around the glyphs in the pictures"
+          />
+          <button
+            :if={@options.style == "mask"}
+            type="button"
+            id="background-transparent"
+            phx-click="image_transparent"
+            class={["btn btn-xs", @options.transparent && "btn-primary"]}
+            aria-pressed={to_string(@options.transparent)}
+            title="No background: a PNG to put on anything"
+          >
+            <span class="inline-block size-3 rounded-sm ring-1 ring-base-content/30 checkerboard"></span>
+            Transparent
+          </button>
+        </div>
+      </form>
       <div
         id="symbol-image-canvas"
         phx-update="ignore"
@@ -570,22 +642,64 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
     """
   end
 
+  attr :field, :string, required: true
+  attr :label, :string, required: true
+  attr :value, :string, required: true, doc: "\"auto\" or a #rrggbb colour"
+  attr :detected, :any, required: true
+  attr :title, :string, required: true
+  attr :disabled, :boolean, default: false
+
+  # A colour of the image: the detected one, or one chosen with the picker.
+  defp colour_choice(assigns) do
+    ~H"""
+    <div class={["flex items-center gap-2 transition-opacity", @disabled && "opacity-40"]}>
+      <span class="text-base-content/70">{@label}</span>
+      <button
+        type="button"
+        id={"#{@field}-auto"}
+        phx-click="image_auto"
+        phx-value-colour={@field}
+        disabled={@disabled}
+        class={["btn btn-xs", @value == "auto" && "btn-primary"]}
+        aria-pressed={to_string(@value == "auto")}
+        title={@title}
+      >
+        <span
+          class="inline-block size-3 rounded-sm ring-1 ring-base-content/30"
+          style={"background: #{@detected || "transparent"}"}
+        ></span>
+        Detected
+      </button>
+      <input
+        type="color"
+        id={"#{@field}-color"}
+        name={@field}
+        value={if @value == "auto", do: @detected || "#ffffff", else: @value}
+        disabled={@disabled}
+        class="size-7 cursor-pointer rounded border border-base-300 bg-transparent disabled:cursor-not-allowed"
+        aria-label={"#{@label} colour"}
+        title={"Choose the #{String.downcase(@label)} colour"}
+      />
+      <span :if={@value != "auto"} class="font-mono text-xs">{@value}</span>
+    </div>
+    """
+  end
+
   # What the SymbolImage hook draws: the pictures, and lines of tokens
-  # (glyph crops scaled to a common height, spaces, characters).
-  defp image_spec(%{algorithm: algorithm, tokens: tokens, align: align, background: background}) do
+  # (glyph crops scaled to a common height, spaces, characters), with the
+  # image options.
+  defp image_spec(%{algorithm: algorithm, tokens: tokens, options: options}) do
     lines =
       tokens
       |> Enum.chunk_by(&(&1 == {:char, "\n"}))
       |> Enum.reject(&(&1 == [{:char, "\n"}]))
       |> Enum.map(fn line -> Enum.map(line, &image_token(algorithm, &1)) end)
 
-    %{
+    Map.merge(options, %{
       images: Enum.map(algorithm.images, & &1["path"]),
       lines: lines,
-      background: background,
-      align: align,
       line_height: @symbol_height + 16
-    }
+    })
   end
 
   defp image_token(algorithm, {:symbol, i}) do

@@ -33,6 +33,12 @@ defmodule SubcipherWeb.PuzzleLive.Show do
     |> assign(:selected_glyph_id, nil)
     |> assign(:merging, false)
     |> assign(:show_image, false)
+    # The glyphs panel of the selected symbol (occurrences, sample, crop),
+    # the occurrence it edits (nil = the selected glyph, else the sample)
+    # and how it shows it ("original" or "mask": the black and white pass).
+    |> assign(:show_glyphs, false)
+    |> assign(:edited_glyph_id, nil)
+    |> assign(:glyph_view, "original")
     |> assign(:show_add, false)
     # Invalid parameter forms being edited, by step id (kept until fixed).
     |> assign(:step_forms, %{})
@@ -64,13 +70,14 @@ defmodule SubcipherWeb.PuzzleLive.Show do
 
         %{
           symbol: s,
-          sample: List.first(glyphs),
+          sample: Ciphers.sample_glyph(s, glyphs),
+          glyphs: glyphs,
           count: length(glyphs),
           frequency: if(s.ignored, do: 0.0, else: length(glyphs) / total * 100)
         }
       end)
       |> Enum.reject(&is_nil(&1.sample))
-      |> Enum.sort_by(&{&1.symbol.ignored, -&1.count, Map.fetch!(order, &1.sample.id)})
+      |> Enum.sort_by(&{&1.symbol.ignored, -&1.count, Map.fetch!(order, hd(&1.glyphs).id)})
 
     duplicates =
       puzzle.symbols
@@ -377,6 +384,57 @@ defmodule SubcipherWeb.PuzzleLive.Show do
     end
   end
 
+  def handle_event("toggle_glyphs", _params, socket) do
+    {:noreply, update(socket, :show_glyphs, &(!&1))}
+  end
+
+  # An occurrence picked in the glyphs panel: edited there, without moving
+  # the selection in the text.
+  def handle_event("edit_glyph", %{"id" => id}, socket) do
+    case find_glyph(socket, id) do
+      %{symbol_id: symbol_id} = glyph when symbol_id == socket.assigns.selected_symbol_id ->
+        {:noreply, assign(socket, :edited_glyph_id, glyph.id)}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("glyph_view", %{"view" => view}, socket) when view in ~w(original mask) do
+    {:noreply, assign(socket, :glyph_view, view)}
+  end
+
+  def handle_event("set_sample", %{"id" => id}, socket) do
+    case find_glyph(socket, id) do
+      nil ->
+        {:noreply, socket}
+
+      glyph ->
+        :ok = Ciphers.set_sample(glyph)
+        {:noreply, reload(socket)}
+    end
+  end
+
+  def handle_event("trim_glyph", %{"id" => id} = params, socket) do
+    with %{} = glyph <- find_glyph(socket, id),
+         {:ok, _} <- Ciphers.trim_glyph(glyph, Map.take(params, ~w(x y w h))) do
+      {:noreply, reload(socket)}
+    else
+      _ -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("reset_trim", %{"id" => id}, socket) do
+    case find_glyph(socket, id) do
+      nil ->
+        {:noreply, socket}
+
+      glyph ->
+        {:ok, _} = Ciphers.reset_glyph_box(glyph)
+        {:noreply, reload(socket)}
+    end
+  end
+
   def handle_event("reset_letters", _params, socket) do
     :ok = Ciphers.reset_letters(socket.assigns.puzzle)
     {:noreply, reload(socket)}
@@ -623,6 +681,10 @@ defmodule SubcipherWeb.PuzzleLive.Show do
      |> put_flash(:info, message)}
   end
 
+  defp find_glyph(socket, id) do
+    Enum.find(socket.assigns.puzzle.glyphs, &(to_string(&1.id) == to_string(id)))
+  end
+
   # Clicking a symbol while merging merges it into the selected symbol.
   defp select(%{assigns: %{merging: true}} = socket, symbol_id, _glyph_id) do
     %{selected_symbol_id: target_id, symbols: symbols} = socket.assigns
@@ -640,7 +702,11 @@ defmodule SubcipherWeb.PuzzleLive.Show do
   end
 
   defp select(socket, symbol_id, glyph_id) do
-    assign(socket, selected_symbol_id: symbol_id, selected_glyph_id: glyph_id)
+    assign(socket,
+      selected_symbol_id: symbol_id,
+      selected_glyph_id: glyph_id,
+      edited_glyph_id: nil
+    )
   end
 
   defp handle_key("Escape", _shift, socket) do
@@ -829,6 +895,9 @@ defmodule SubcipherWeb.PuzzleLive.Show do
               plaintext={@plaintext}
               show_image={@show_image}
               show_add={@show_add}
+              show_glyphs={@show_glyphs}
+              edited_glyph_id={@edited_glyph_id}
+              glyph_view={@glyph_view}
               tolerance={@tolerance}
               english_frequency={@english_frequency}
               symbol_suggestions={@symbol_suggestions}
@@ -874,6 +943,9 @@ defmodule SubcipherWeb.PuzzleLive.Show do
   attr :plaintext, :string, required: true
   attr :show_image, :boolean, required: true
   attr :show_add, :boolean, required: true
+  attr :show_glyphs, :boolean, required: true
+  attr :edited_glyph_id, :any, required: true
+  attr :glyph_view, :string, required: true
   attr :tolerance, :integer, required: true
   attr :english_frequency, :string, required: true
   attr :symbol_suggestions, :list, required: true
@@ -903,6 +975,15 @@ defmodule SubcipherWeb.PuzzleLive.Show do
             merging={@merging}
             key={@key}
             images={@images}
+            show_glyphs={@show_glyphs}
+          />
+
+          <.glyph_panel
+            :if={@show_glyphs and @selected_symbol_id != nil and !@merging}
+            entry={Enum.find(@key, &(&1.symbol.id == @selected_symbol_id))}
+            glyph_id={@edited_glyph_id || @selected_glyph_id}
+            images={@images}
+            view={@glyph_view}
           />
 
           <section
@@ -1144,6 +1225,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
   attr :symbol, :any, required: true
   attr :glyph_id, :any, required: true
   attr :merging, :boolean, required: true
+  attr :show_glyphs, :boolean, default: false
   attr :key, :list, required: true
   attr :images, :map, required: true
 
@@ -1195,6 +1277,16 @@ defmodule SubcipherWeb.PuzzleLive.Show do
         <%= if @merging do %>
           <button type="button" class="btn btn-sm" phx-click="cancel_merge">Cancel</button>
         <% else %>
+          <button
+            type="button"
+            class={["btn btn-sm", @show_glyphs && "btn-active"]}
+            phx-click="toggle_glyphs"
+            id="glyphs-button"
+            aria-expanded={to_string(@show_glyphs)}
+            title="Its occurrences: choose the one shown, trim a crop"
+          >
+            <.icon name="hero-squares-2x2" class="size-4" /> Glyphs
+          </button>
           <button type="button" class="btn btn-sm" phx-click="start_merge" id="merge-button">
             <.icon name="hero-arrows-pointing-in" class="size-4" /> Merge…
           </button>
@@ -1221,6 +1313,132 @@ defmodule SubcipherWeb.PuzzleLive.Show do
         <% end %>
       </div>
     </div>
+    """
+  end
+
+  attr :entry, :any, required: true, doc: "the selected symbol's key entry"
+  attr :glyph_id, :any, required: true, doc: "the occurrence to edit (else the sample)"
+  attr :images, :map, required: true
+  attr :view, :string, required: true, doc: "\"original\" or \"mask\""
+
+  # The selected symbol's occurrences: choose the one shown for it (and used
+  # by algorithms), and trim the crop of any of them.
+  defp glyph_panel(%{entry: nil} = assigns), do: ~H""
+
+  defp glyph_panel(assigns) do
+    glyph =
+      Enum.find(assigns.entry.glyphs, &(&1.id == assigns.glyph_id)) || assigns.entry.sample
+
+    assigns =
+      assigns
+      |> assign(:glyph, glyph)
+      |> assign(:image, assigns.images[glyph.image_id])
+
+    ~H"""
+    <section
+      id="glyph-panel"
+      class="rounded-2xl border border-base-300 bg-base-100 p-4 grid gap-5 md:grid-cols-[minmax(0,1fr)_18rem]"
+    >
+      <div class="space-y-2 min-w-0">
+        <h3 class="text-sm font-semibold">
+          Occurrences <span class="text-base-content/50 font-normal">· {@entry.count}</span>
+        </h3>
+        <p class="text-xs text-base-content/60">
+          Pick one to trim it. The <.icon name="hero-star-solid" class="size-3 text-warning" />
+          sample is the one shown in the symbol key and drawn by algorithms.
+        </p>
+        <div id="occurrences" class="flex flex-wrap gap-1.5 max-h-56 overflow-y-auto p-0.5">
+          <button
+            :for={g <- @entry.glyphs}
+            type="button"
+            id={"occurrence-#{g.id}"}
+            phx-click="edit_glyph"
+            phx-value-id={g.id}
+            aria-pressed={to_string(g.id == @glyph.id)}
+            title={if g.detected_box, do: "Trimmed", else: nil}
+            class={[
+              "relative grid place-items-center size-12 rounded-lg bg-base-200/60 transition",
+              "hover:bg-base-200 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+              g.id == @glyph.id && "ring-2 ring-primary bg-primary/10"
+            ]}
+          >
+            <.glyph_image glyph={g} image={@images[g.image_id]} box={40} />
+            <.icon
+              :if={g.id == @entry.sample.id}
+              name="hero-star-solid"
+              class="absolute -top-1 -right-1 size-4 text-warning drop-shadow"
+            />
+            <.icon
+              :if={g.detected_box}
+              name="hero-scissors"
+              class="absolute -bottom-1 -right-1 size-3.5 text-base-content/60"
+            />
+          </button>
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="text-sm font-semibold">Crop</h3>
+          <div id="glyph-view" class="join">
+            <button
+              :for={{view, label} <- [{"original", "Original"}, {"mask", "Black & white"}]}
+              type="button"
+              id={"view-#{view}"}
+              class={["btn btn-xs join-item", @view == view && "btn-primary"]}
+              phx-click="glyph_view"
+              phx-value-view={view}
+              aria-pressed={to_string(@view == view)}
+            >
+              {label}
+            </button>
+          </div>
+        </div>
+        <div
+          id="glyph-trim"
+          phx-hook="GlyphTrim"
+          phx-update="ignore"
+          data-own-keys
+          data-glyph-id={@glyph.id}
+          data-image={@image.path}
+          data-box={Jason.encode!(%{x: @glyph.x, y: @glyph.y, w: @glyph.w, h: @glyph.h})}
+          data-detected={@glyph.detected_box && Jason.encode!(@glyph.detected_box)}
+          data-view={@view}
+          class="relative h-56 w-full overflow-hidden rounded-lg bg-base-200 select-none touch-none"
+        >
+        </div>
+        <p class="text-xs text-base-content/60">
+          Drag an edge, or focus it and use the arrow keys (<kbd class="kbd kbd-xs">Shift</kbd>: 5 px).
+        </p>
+        <div class="flex flex-wrap gap-2">
+          <%= if @glyph.id == @entry.sample.id do %>
+            <span class="badge badge-warning badge-soft gap-1">
+              <.icon name="hero-star-solid" class="size-3" /> Sample
+            </span>
+          <% else %>
+            <button
+              type="button"
+              id="set-sample"
+              class="btn btn-xs"
+              phx-click="set_sample"
+              phx-value-id={@glyph.id}
+            >
+              <.icon name="hero-star" class="size-4" /> Use as sample
+            </button>
+          <% end %>
+          <button
+            :if={@glyph.detected_box}
+            type="button"
+            id="reset-trim"
+            class="btn btn-xs btn-ghost"
+            phx-click="reset_trim"
+            phx-value-id={@glyph.id}
+          >
+            <.icon name="hero-arrow-uturn-left" class="size-4" /> Reset crop
+          </button>
+        </div>
+      </div>
+    </section>
     """
   end
 

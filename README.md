@@ -78,7 +78,8 @@ ciphers:
 * **Letter numbers (A1Z26)** — A = 1 … Z = 26 (or A = 0).
 * **Reversed text** — by line, by word or the whole text.
 * **Anagram** — the characters become tiles to put back in order: drag and drop, tap two
-  tiles, or `←`/`→` on a focused tile. Spaces are tiles too (one dragged to the end disappears).
+  tiles, or `←`/`→` on a focused tile; the other tiles bounce aside to make room. Spaces are
+  tiles too (one dragged to the end disappears).
 
 ### Old School RuneScape
 

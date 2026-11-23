@@ -373,7 +373,7 @@ defmodule SubcipherWeb.StepComponents do
         phx-hook="AnagramTiles"
         data-step-id={@step_id}
         aria-label="Characters, in reading order"
-        class="flex flex-wrap gap-1.5 select-none"
+        class="relative flex flex-wrap gap-1.5 select-none"
       >
         <li
           :for={{index, char} <- @tiles}

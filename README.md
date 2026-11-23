@@ -44,10 +44,50 @@ Detection isn't perfect, so the puzzle page lets you fix it:
 * **Ignore** — hide noise or decorations from the text.
 * **Grouping tolerance** — re-cluster everything (letters are kept when a new group agrees).
 
-Keyboard: type a letter to substitute the selected symbol, `⌫` clears, `←`/`→`/`Tab`
-move between symbols, `Esc` deselects.
+Keyboard: type a letter to substitute the selected symbol, `⌫` clears, `←`/`→` move to the
+previous/next character of the text, `↑`/`↓` (or `Tab`) to the previous/next symbol of the
+key, `Esc` deselects.
 
-Uploaded pictures are stored in `priv/static/uploads/` (git-ignored).
+Uploaded pictures are stored in `priv/static/uploads/` (git-ignored). A cipher can span
+several pictures; they share the same symbols.
+
+## Decoding steps
+
+A cipher starts from either **pictures** or **text** (chosen when creating it):
+
+* pictures — step 1 is the substitution of the symbols detected in the pictures (it is the
+  only step that can read pictures);
+* text — the cipher text is pasted in (and editable on step 1); step 1 can be any cipher.
+
+Then each step decodes the output of the previous one. The steps are shown as connected
+circles at the top of the page: click one to open it (`?step=N` in the URL), or the last one,
+**+**, to add a step. A step's cipher can be changed with the selector on the step. Available
+ciphers:
+
+* **Symbol substitution** — every distinct character is a symbol; replace each one by the
+  letter it stands for (one input per symbol, most frequent first).
+* **Letter substitution** — map each letter to another by hand (an alphabet grid showing
+  how often each letter appears in the step's input).
+* **Caesar cipher** — a shift; **Suggest keys** ranks all 26 shifts by how English the
+  result looks.
+* **Keyword substitution** — the cipher alphabet is a keyword followed by the rest of the
+  alphabet.
+
+Letter ciphers only change the letters A–Z (case kept); anything else, including `·` for
+symbols not deciphered yet, passes through.
+
+### Adding a cipher type
+
+1. Create a module implementing `Subcipher.Steps.Cipher` in `lib/subcipher/steps/ciphers/`
+   (see the Atbash example in that module's docs): `type/0` (stored in the database, never
+   change it), `name/0`, `description/0`, `fields/0` (its parameters) and `decode/2`;
+   optionally `validate/1`, `summary/1` and `candidates/2` (key suggestions).
+2. List it in `@ciphers` in `Subcipher.Steps`.
+
+The parameter form is generated from `fields/0` (`:integer`, `:string`, `:letter_map` or `:symbol_map`
+fields), and `test/subcipher/steps/ciphers_test.exs` checks every registered cipher
+against the behaviour's contract automatically. `Subcipher.Steps.Alphabet` has helpers
+for letter-wise ciphers (`map_letters/2`, `english_score/1`).
 
 ## Tests
 

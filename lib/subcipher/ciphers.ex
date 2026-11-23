@@ -59,6 +59,7 @@ defmodule Subcipher.Ciphers do
     |> Repo.preload(
       images: from(i in Image, order_by: i.position),
       symbols: from(s in Symbol, order_by: s.id),
+      steps: from(s in Subcipher.Steps.Step, order_by: s.position),
       glyphs:
         from(g in Glyph,
           join: i in assoc(g, :image),
@@ -294,6 +295,35 @@ defmodule Subcipher.Ciphers do
     |> Enum.each(&repo.insert_all(Glyph, &1))
 
     {:ok, length(rows)}
+  end
+
+  @doc """
+  Creates a puzzle whose input is text (`attrs`: title, input_text), with a
+  first decoding step of cipher `first_step_type`.
+  """
+  def create_text_puzzle(attrs, first_step_type) do
+    changeset =
+      Puzzle.text_changeset(
+        %Puzzle{},
+        Map.put(stringify(attrs), "threshold", default_threshold())
+      )
+
+    Multi.new()
+    |> Multi.insert(:puzzle, changeset)
+    |> Multi.run(:step, fn _repo, %{puzzle: puzzle} ->
+      Subcipher.Steps.add_step(puzzle, first_step_type)
+    end)
+    |> Repo.transaction()
+    |> case do
+      {:ok, %{puzzle: puzzle}} -> {:ok, get_puzzle!(puzzle.id)}
+      {:error, _step, reason, _} -> {:error, reason}
+    end
+  end
+
+  def change_text_puzzle(attrs \\ %{}), do: Puzzle.text_changeset(%Puzzle{}, attrs)
+
+  def update_input_text(%Puzzle{} = puzzle, text) do
+    puzzle |> Puzzle.input_text_changeset(%{input_text: text}) |> Repo.update()
   end
 
   def change_title(%Puzzle{} = puzzle, attrs \\ %{}), do: Puzzle.title_changeset(puzzle, attrs)

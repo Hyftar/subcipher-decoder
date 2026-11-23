@@ -2,6 +2,11 @@ defmodule SubcipherWeb.PuzzleLive.Show do
   use SubcipherWeb, :live_view
 
   alias Subcipher.Ciphers
+  alias Subcipher.Ciphers.Puzzle
+  alias Subcipher.Steps
+
+  import SubcipherWeb.StepComponents,
+    only: [step_card: 1, output: 1, step_nav: 1, add_step_panel: 1]
 
   # Height (px) at which the typical glyph is displayed in the cipher text.
   @display_height 40
@@ -19,6 +24,12 @@ defmodule SubcipherWeb.PuzzleLive.Show do
      |> assign(:merging, false)
      |> assign(:show_image, false)
      |> assign(:show_add, false)
+     # Invalid parameter forms being edited, by step id (kept until fixed).
+     |> assign(:step_forms, %{})
+     # Steps whose key suggestions are shown.
+     |> assign(:open_candidates, MapSet.new())
+     # Number of the step shown (?step=N), or :new for the "add a step" view.
+     |> assign(:selected_step, 1)
      |> assign(:english_frequency, @english_frequency)
      |> load(puzzle)}
   end
@@ -70,8 +81,87 @@ defmodule SubcipherWeb.PuzzleLive.Show do
     |> assign(:solved, Enum.count(active, & &1.symbol.letter))
     |> assign(:symbol_count, length(active))
     |> assign(:plaintext, Ciphers.plaintext(puzzle))
+    |> assign_pipeline()
     |> assign(:tolerance, round(puzzle.threshold * 1000))
     |> keep_selection_valid()
+  end
+
+  # Runs the steps. A pictures puzzle starts with the (implicit) symbol
+  # substitution of its pictures as step 1; the stored steps follow. A text
+  # puzzle's stored steps start from its input text.
+  defp assign_pipeline(socket) do
+    %{puzzle: puzzle} = socket.assigns
+    pictures? = Puzzle.pictures?(puzzle)
+    source = if pictures?, do: socket.assigns.plaintext, else: puzzle.input_text
+    offset = if pictures?, do: 1, else: 0
+    results = Steps.run(source, puzzle.steps)
+
+    pipeline =
+      for {result, i} <- Enum.with_index(results) do
+        step = result.step
+
+        form =
+          Map.get_lazy(socket.assigns.step_forms, step.id, fn ->
+            step.type |> Steps.params_changeset(step.params) |> to_step_form(step)
+          end)
+
+        candidates =
+          if MapSet.member?(socket.assigns.open_candidates, step.id) and
+               Steps.implements?(result.cipher, :candidates, 2),
+             do: result.cipher.candidates(result.input, result.params)
+
+        %{number: i + 1 + offset, result: result, form: form, candidates: candidates}
+      end
+
+    picture_node =
+      if pictures?,
+        do: [%{number: 1, label: "Symbol substitution", icon: "hero-photo"}],
+        else: []
+
+    nodes =
+      picture_node ++ Enum.map(pipeline, &%{number: &1.number, label: &1.result.cipher.name()})
+
+    input_form =
+      if not pictures?, do: to_form(%{"input_text" => puzzle.input_text}, as: :puzzle)
+
+    socket
+    |> assign(:pipeline, pipeline)
+    |> assign(:nodes, nodes)
+    |> assign(:input_form, input_form)
+    |> assign(:final_output, if(results == [], do: source, else: List.last(results).output))
+    |> clamp_selected()
+  end
+
+  # Keeps the selected step within the existing ones.
+  defp clamp_selected(socket) do
+    %{nodes: nodes, selected_step: selected} = socket.assigns
+    count = length(nodes)
+
+    selected =
+      cond do
+        count == 0 -> :new
+        selected == :new -> :new
+        selected > count -> count
+        selected < 1 -> 1
+        true -> selected
+      end
+
+    assign(socket,
+      selected_step: selected,
+      current_entry: Enum.find(socket.assigns.pipeline, &(&1.number == selected))
+    )
+  end
+
+  defp step_path(socket, number), do: ~p"/puzzles/#{socket.assigns.puzzle}?step=#{number}"
+
+  defp step_number(socket, step_id) do
+    Enum.find_value(socket.assigns.pipeline, &(&1.result.step.id == step_id && &1.number))
+  end
+
+  defp to_step_form(changeset, step), do: to_form(changeset, as: :step, id: "step-#{step.id}")
+
+  defp find_step(socket, id) do
+    Enum.find(socket.assigns.puzzle.steps, &(to_string(&1.id) == to_string(id)))
   end
 
   # One section per picture. Each picture gets its own display scale so that
@@ -136,6 +226,26 @@ defmodule SubcipherWeb.PuzzleLive.Show do
 
   defp median([]), do: 0
   defp median(values), do: values |> Enum.sort() |> Enum.at(div(length(values), 2))
+
+  @impl true
+  def handle_params(params, _uri, socket) do
+    selected =
+      case params["step"] do
+        "new" ->
+          :new
+
+        nil ->
+          1
+
+        n ->
+          case Integer.parse(n) do
+            {i, ""} -> i
+            _ -> 1
+          end
+      end
+
+    {:noreply, socket |> assign(:selected_step, selected) |> clamp_selected()}
+  end
 
   ## Events
 
@@ -210,6 +320,100 @@ defmodule SubcipherWeb.PuzzleLive.Show do
 
   def handle_event("toggle_add", _params, socket) do
     {:noreply, update(socket, :show_add, &(!&1))}
+  end
+
+  def handle_event("add_step", %{"type" => type}, socket) do
+    case Steps.add_step(socket.assigns.puzzle, type) do
+      {:ok, step} ->
+        socket = reload(socket)
+        {:noreply, push_patch(socket, to: step_path(socket, step_number(socket, step.id)))}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not add this step.")}
+    end
+  end
+
+  def handle_event("change_step_type", %{"step_id" => id, "type" => type}, socket) do
+    with %{} = step <- find_step(socket, id),
+         {:ok, _} <- Steps.change_type(step, type) do
+      {:noreply,
+       socket
+       |> update(:step_forms, &Map.delete(&1, step.id))
+       |> update(:open_candidates, &MapSet.delete(&1, step.id))
+       |> reload()}
+    else
+      _ -> {:noreply, put_flash(socket, :error, "Could not change the cipher of this step.")}
+    end
+  end
+
+  def handle_event("update_input", %{"puzzle" => %{"input_text" => text}}, socket) do
+    case Ciphers.update_input_text(socket.assigns.puzzle, text) do
+      {:ok, _} -> {:noreply, reload(socket)}
+      {:error, _} -> {:noreply, put_flash(socket, :error, "This text is too long.")}
+    end
+  end
+
+  def handle_event("update_step", %{"step_id" => id} = params, socket) do
+    case find_step(socket, id) do
+      nil -> {:noreply, socket}
+      step -> {:noreply, update_step(socket, step, Map.get(params, "step", %{}))}
+    end
+  end
+
+  def handle_event("apply_candidate", %{"id" => id, "params" => params}, socket) do
+    case find_step(socket, id) do
+      nil -> {:noreply, socket}
+      step -> {:noreply, update_step(socket, step, params)}
+    end
+  end
+
+  def handle_event("toggle_candidates", %{"id" => id}, socket) do
+    case find_step(socket, id) do
+      nil ->
+        {:noreply, socket}
+
+      step ->
+        open = socket.assigns.open_candidates
+
+        open =
+          if MapSet.member?(open, step.id),
+            do: MapSet.delete(open, step.id),
+            else: MapSet.put(open, step.id)
+
+        {:noreply, socket |> assign(:open_candidates, open) |> assign_pipeline()}
+    end
+  end
+
+  def handle_event("delete_step", %{"id" => id}, socket) do
+    case find_step(socket, id) do
+      nil ->
+        {:noreply, socket}
+
+      step ->
+        number = step_number(socket, step.id)
+
+        case Steps.delete_step(step) do
+          {:ok, _} ->
+            socket = socket |> update(:step_forms, &Map.delete(&1, step.id)) |> reload()
+            {:noreply, push_patch(socket, to: step_path(socket, max(number - 1, 1)))}
+
+          {:error, :last_step} ->
+            {:noreply, put_flash(socket, :error, "A text cipher needs at least one step.")}
+        end
+    end
+  end
+
+  def handle_event("move_step", %{"id" => id, "direction" => direction}, socket)
+      when direction in ~w(up down) do
+    case find_step(socket, id) do
+      nil ->
+        {:noreply, socket}
+
+      step ->
+        {:ok, _} = Steps.move_step(step, String.to_existing_atom(direction))
+        socket = reload(socket)
+        {:noreply, push_patch(socket, to: step_path(socket, step_number(socket, step.id)))}
+    end
   end
 
   def handle_event("move_image", %{"id" => id, "direction" => direction}, socket)
@@ -394,6 +598,20 @@ defmodule SubcipherWeb.PuzzleLive.Show do
     end
   end
 
+  # Valid parameters are saved; invalid ones stay in the form, with errors,
+  # until fixed (the step keeps decoding with its last valid parameters).
+  defp update_step(socket, step, params) do
+    case Steps.update_params(step, params) do
+      {:ok, _step} ->
+        socket |> update(:step_forms, &Map.delete(&1, step.id)) |> reload()
+
+      {:error, changeset} ->
+        socket
+        |> update(:step_forms, &Map.put(&1, step.id, to_step_form(changeset, step)))
+        |> assign_pipeline()
+    end
+  end
+
   defp assign_letter(socket, symbol, letter) do
     case Ciphers.assign_letter(symbol, letter) do
       {:ok, _} -> reload(socket)
@@ -407,19 +625,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash}>
-      <div
-        id="puzzle"
-        phx-hook="CipherKeys"
-        data-selected={to_string(@selected_symbol_id != nil)}
-        data-scroll-to={
-          cond do
-            @selected_glyph_id -> "glyph-#{@selected_glyph_id}"
-            @selected_symbol_id -> "symbol-#{@selected_symbol_id}"
-            true -> nil
-          end
-        }
-        class="space-y-6"
-      >
+      <div id="puzzle-page" class="space-y-6">
         <div class="flex flex-wrap items-center gap-3">
           <.link navigate={~p"/"} class="btn btn-ghost btn-sm btn-square" aria-label="Back">
             <.icon name="hero-arrow-left" class="size-5" />
@@ -439,7 +645,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
               class="w-full bg-transparent text-2xl font-bold tracking-tight rounded-md px-1 -mx-1 focus:outline-none focus:ring-2 focus:ring-primary/40"
             />
           </.form>
-          <div class="flex items-center gap-3 text-sm">
+          <div :if={Puzzle.pictures?(@puzzle)} class="flex items-center gap-3 text-sm">
             <span class="text-base-content/70" id="progress">
               {@solved} / {@symbol_count} symbols
             </span>
@@ -447,212 +653,290 @@ defmodule SubcipherWeb.PuzzleLive.Show do
           </div>
         </div>
 
-        <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          <div class="space-y-6 min-w-0">
-            <.selection_bar
-              symbol={@symbols[@selected_symbol_id]}
-              glyph_id={@selected_glyph_id}
+        <.step_nav puzzle={@puzzle} nodes={@nodes} selected={@selected_step} />
+
+        <%= cond do %>
+          <% @selected_step == :new -> %>
+            <.add_step_panel />
+          <% @current_entry -> %>
+            <.step_card
+              number={@current_entry.number}
+              result={@current_entry.result}
+              form={@current_entry.form}
+              candidates={@current_entry.candidates}
+              can_move_up={@current_entry != hd(@pipeline)}
+              can_move_down={@current_entry != List.last(@pipeline)}
+              can_delete={Puzzle.pictures?(@puzzle) or length(@pipeline) > 1}
+              input_form={@current_entry == hd(@pipeline) && @input_form}
+            />
+          <% true -> %>
+            <.symbol_step
+              puzzle={@puzzle}
+              selected_symbol_id={@selected_symbol_id}
+              selected_glyph_id={@selected_glyph_id}
               merging={@merging}
               key={@key}
               images={@images}
+              symbols={@symbols}
+              sections={@sections}
+              duplicates={@duplicates}
+              plaintext={@plaintext}
+              show_image={@show_image}
+              show_add={@show_add}
+              tolerance={@tolerance}
+              english_frequency={@english_frequency}
             />
+        <% end %>
 
-            <section
-              id="cipher-text"
-              class="rounded-2xl border border-base-300 bg-base-100 p-4 sm:p-6 space-y-5 overflow-x-auto"
-              phx-click="deselect"
+        <section
+          :if={@selected_step != :new and @selected_step != length(@nodes) and length(@nodes) > 1}
+          id="final-output-block"
+          class="rounded-2xl border border-base-300 bg-base-100 p-4 sm:p-6 space-y-2"
+        >
+          <h2 class="flex items-center justify-between text-sm font-semibold">
+            Final output
+            <.link
+              patch={~p"/puzzles/#{@puzzle}?step=#{length(@nodes)}"}
+              class="link link-hover text-xs font-normal"
+            >
+              Go to step {length(@nodes)} <.icon name="hero-arrow-right" class="size-3" />
+            </.link>
+          </h2>
+          <.output id="final-output" text={@final_output} />
+        </section>
+      </div>
+    </Layouts.app>
+    """
+  end
+
+  attr :puzzle, :any, required: true
+  attr :selected_symbol_id, :any, required: true
+  attr :selected_glyph_id, :any, required: true
+  attr :merging, :boolean, required: true
+  attr :key, :list, required: true
+  attr :images, :map, required: true
+  attr :symbols, :map, required: true
+  attr :sections, :list, required: true
+  attr :duplicates, :any, required: true
+  attr :plaintext, :string, required: true
+  attr :show_image, :boolean, required: true
+  attr :show_add, :boolean, required: true
+  attr :tolerance, :integer, required: true
+  attr :english_frequency, :string, required: true
+
+  # Step 1 of a pictures puzzle: the symbols of the pictures, substituted by
+  # hand, with the symbol key.
+  defp symbol_step(assigns) do
+    ~H"""
+    <div
+      id="puzzle"
+      phx-hook="CipherKeys"
+      data-selected={to_string(@selected_symbol_id != nil)}
+      data-scroll-to={
+        cond do
+          @selected_glyph_id -> "glyph-#{@selected_glyph_id}"
+          @selected_symbol_id -> "symbol-#{@selected_symbol_id}"
+          true -> nil
+        end
+      }
+    >
+      <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div class="space-y-6 min-w-0">
+          <.selection_bar
+            symbol={@symbols[@selected_symbol_id]}
+            glyph_id={@selected_glyph_id}
+            merging={@merging}
+            key={@key}
+            images={@images}
+          />
+
+          <section
+            id="cipher-text"
+            class="rounded-2xl border border-base-300 bg-base-100 p-4 sm:p-6 space-y-5 overflow-x-auto"
+            phx-click="deselect"
+          >
+            <div
+              :for={section <- @sections}
+              id={"section-#{section.image.id}"}
+              class="space-y-5 [&+&]:pt-6 [&+&]:border-t-2 [&+&]:border-base-300"
             >
               <div
-                :for={section <- @sections}
-                id={"section-#{section.image.id}"}
-                class="space-y-5 [&+&]:pt-6 [&+&]:border-t-2 [&+&]:border-base-300"
+                :if={length(@sections) > 1}
+                class="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-base-content/50"
               >
-                <div
+                Picture {section.index}
+                <.picture_controls section={section} count={length(@sections)} />
+              </div>
+              <div
+                :for={line <- section.lines}
+                id={"line-#{line.id}"}
+                class="flex flex-wrap gap-x-5 gap-y-3 pb-5 border-b border-dashed border-base-300 last:border-0 last:pb-0"
+              >
+                <div :for={word <- line.words} class="flex items-start gap-1">
+                  <.glyph_cell
+                    :for={g <- word}
+                    glyph={g}
+                    line={line}
+                    symbol={@symbols[g.symbol_id]}
+                    image={section.image}
+                    scale={section.scale}
+                    selected={g.symbol_id == @selected_symbol_id}
+                    current={g.id == @selected_glyph_id}
+                    merging={@merging}
+                    duplicate={MapSet.member?(@duplicates, @symbols[g.symbol_id].letter)}
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section
+            id="step-1-output"
+            class="rounded-2xl border border-base-300 bg-base-100 p-4 sm:p-6 space-y-2"
+          >
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/50">
+              Output
+            </h2>
+            <.output id="plaintext" text={@plaintext} />
+          </section>
+
+          <section class="rounded-2xl border border-base-300 bg-base-100">
+            <button
+              type="button"
+              phx-click="toggle_image"
+              class="w-full flex items-center justify-between px-4 py-2 text-sm font-semibold"
+            >
+              {if length(@puzzle.images) > 1,
+                do: "Original pictures & detected symbols",
+                else: "Original picture & detected symbols"}
+              <.icon
+                name={if @show_image, do: "hero-chevron-up", else: "hero-chevron-down"}
+                class="size-4"
+              />
+            </button>
+            <div :if={@show_image} class="p-4 pt-0 space-y-4">
+              <figure
+                :for={section <- @sections}
+                id={"picture-#{section.image.id}"}
+                class="space-y-2"
+              >
+                <figcaption
                   :if={length(@sections) > 1}
                   class="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-base-content/50"
                 >
                   Picture {section.index}
-                  <.picture_controls section={section} count={length(@sections)} />
-                </div>
-                <div
-                  :for={line <- section.lines}
-                  id={"line-#{line.id}"}
-                  class="flex flex-wrap gap-x-5 gap-y-3 pb-5 border-b border-dashed border-base-300 last:border-0 last:pb-0"
-                >
-                  <div :for={word <- line.words} class="flex items-start gap-1">
-                    <.glyph_cell
-                      :for={g <- word}
-                      glyph={g}
-                      line={line}
-                      symbol={@symbols[g.symbol_id]}
-                      image={section.image}
-                      scale={section.scale}
-                      selected={g.symbol_id == @selected_symbol_id}
-                      current={g.id == @selected_glyph_id}
-                      merging={@merging}
-                      duplicate={MapSet.member?(@duplicates, @symbols[g.symbol_id].letter)}
-                    />
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section class="rounded-2xl border border-base-300 bg-base-100">
-              <div class="flex items-center justify-between px-4 py-2 border-b border-base-300">
-                <h2 class="font-semibold text-sm">Deciphered text</h2>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs"
-                  phx-click={JS.dispatch("phx:copy", to: "#plaintext")}
-                  id="copy-plaintext"
-                >
-                  <.icon name="hero-clipboard" class="size-4" /> Copy
-                </button>
-              </div>
-              <pre
-                id="plaintext"
-                class="p-4 font-mono text-lg whitespace-pre-wrap break-words leading-relaxed tracking-wider"
-              >{@plaintext}</pre>
-            </section>
-
-            <section class="rounded-2xl border border-base-300 bg-base-100">
-              <button
-                type="button"
-                phx-click="toggle_image"
-                class="w-full flex items-center justify-between px-4 py-2 text-sm font-semibold"
-              >
-                {if length(@puzzle.images) > 1,
-                  do: "Original pictures & detected symbols",
-                  else: "Original picture & detected symbols"}
-                <.icon
-                  name={if @show_image, do: "hero-chevron-up", else: "hero-chevron-down"}
-                  class="size-4"
-                />
-              </button>
-              <div :if={@show_image} class="p-4 pt-0 space-y-4">
-                <figure
-                  :for={section <- @sections}
-                  id={"picture-#{section.image.id}"}
-                  class="space-y-2"
-                >
-                  <figcaption
-                    :if={length(@sections) > 1}
-                    class="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-base-content/50"
-                  >
-                    Picture {section.index}
-                    <span class="flex items-center gap-1">
-                      <.picture_controls
-                        section={section}
-                        count={length(@sections)}
-                        id_prefix="panel-"
-                      />
-                      <button
-                        type="button"
-                        class="btn btn-ghost btn-xs normal-case tracking-normal font-normal"
-                        phx-click="delete_image"
-                        phx-value-id={section.image.id}
-                        data-confirm="Remove this picture? Symbols that only appear in it are removed too."
-                      >
-                        <.icon name="hero-trash" class="size-4" /> Remove
-                      </button>
-                    </span>
-                  </figcaption>
-                  <div class="relative">
-                    <img
-                      src={section.image.path}
-                      alt={"Cipher picture #{section.index}"}
-                      class="block w-full h-auto rounded-lg"
+                  <span class="flex items-center gap-1">
+                    <.picture_controls
+                      section={section}
+                      count={length(@sections)}
+                      id_prefix="panel-"
                     />
                     <button
-                      :for={g <- section.glyphs}
                       type="button"
-                      phx-click="select_glyph"
-                      phx-value-id={g.id}
-                      aria-label="Select symbol"
-                      class={[
-                        "absolute rounded-[2px] ring-1 transition",
-                        cond do
-                          g.symbol_id == @selected_symbol_id -> "ring-2 ring-primary bg-primary/25"
-                          @symbols[g.symbol_id].ignored -> "ring-base-content/20"
-                          @symbols[g.symbol_id].letter -> "ring-success/70 bg-success/10"
-                          true -> "ring-warning/70 hover:bg-warning/20"
-                        end
-                      ]}
-                      style={box_style(g, section.image)}
-                    />
-                  </div>
-                </figure>
-                <.form
-                  for={%{}}
-                  id="regroup-form"
-                  phx-submit="regroup"
-                  class="mt-4 flex flex-wrap items-end gap-3 text-sm"
-                >
-                  <label class="flex-1 min-w-56">
-                    <span class="block font-medium mb-1">
-                      Grouping tolerance
-                      <span class="text-base-content/60 font-normal">
-                        (higher = more glyphs considered identical)
-                      </span>
-                    </span>
-                    <input
-                      type="range"
-                      name="tolerance"
-                      min="5"
-                      max="150"
-                      value={@tolerance}
-                      class="range range-primary range-sm"
-                    />
-                  </label>
+                      class="btn btn-ghost btn-xs normal-case tracking-normal font-normal"
+                      phx-click="delete_image"
+                      phx-value-id={section.image.id}
+                      data-confirm="Remove this picture? Symbols that only appear in it are removed too."
+                    >
+                      <.icon name="hero-trash" class="size-4" /> Remove
+                    </button>
+                  </span>
+                </figcaption>
+                <div class="relative">
+                  <img
+                    src={section.image.path}
+                    alt={"Cipher picture #{section.index}"}
+                    class="block w-full h-auto rounded-lg"
+                  />
                   <button
-                    type="submit"
-                    class="btn btn-sm"
-                    data-confirm="Regroup all symbols? Letters are kept when all glyphs of a new group agree."
-                  >
-                    Regroup symbols
-                  </button>
-                </.form>
-              </div>
-            </section>
-
-            <section id="add-picture" class="rounded-2xl border border-base-300 bg-base-100">
-              <button
-                type="button"
-                phx-click="toggle_add"
-                class="w-full flex items-center justify-between px-4 py-2 text-sm font-semibold"
+                    :for={g <- section.glyphs}
+                    type="button"
+                    phx-click="select_glyph"
+                    phx-value-id={g.id}
+                    aria-label="Select symbol"
+                    class={[
+                      "absolute rounded-[2px] ring-1 transition",
+                      cond do
+                        g.symbol_id == @selected_symbol_id -> "ring-2 ring-primary bg-primary/25"
+                        @symbols[g.symbol_id].ignored -> "ring-base-content/20"
+                        @symbols[g.symbol_id].letter -> "ring-success/70 bg-success/10"
+                        true -> "ring-warning/70 hover:bg-warning/20"
+                      end
+                    ]}
+                    style={box_style(g, section.image)}
+                  />
+                </div>
+              </figure>
+              <.form
+                for={%{}}
+                id="regroup-form"
+                phx-submit="regroup"
+                class="mt-4 flex flex-wrap items-end gap-3 text-sm"
               >
-                <span class="flex items-center gap-2">
-                  <.icon name="hero-plus-circle" class="size-4" /> Add a picture to this cipher
-                </span>
-                <.icon
-                  name={if @show_add, do: "hero-chevron-up", else: "hero-chevron-down"}
-                  class="size-4"
-                />
-              </button>
-              <div :if={@show_add} class="p-4 pt-0 space-y-3">
-                <p class="text-sm text-base-content/70">
-                  Symbols in the new picture are matched with the ones you already have, so
-                  your letters apply to it right away.
-                </p>
-                <.live_component
-                  module={SubcipherWeb.PictureUploadComponent}
-                  id="add-picture-upload"
-                  puzzle={@puzzle}
-                />
-              </div>
-            </section>
-          </div>
+                <label class="flex-1 min-w-56">
+                  <span class="block font-medium mb-1">
+                    Grouping tolerance
+                    <span class="text-base-content/60 font-normal">
+                      (higher = more glyphs considered identical)
+                    </span>
+                  </span>
+                  <input
+                    type="range"
+                    name="tolerance"
+                    min="5"
+                    max="150"
+                    value={@tolerance}
+                    class="range range-primary range-sm"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  class="btn btn-sm"
+                  data-confirm="Regroup all symbols? Letters are kept when all glyphs of a new group agree."
+                >
+                  Regroup symbols
+                </button>
+              </.form>
+            </div>
+          </section>
 
-          <.symbol_key
-            key={@key}
-            images={@images}
-            selected_symbol_id={@selected_symbol_id}
-            duplicates={@duplicates}
-            english_frequency={@english_frequency}
-          />
+          <section id="add-picture" class="rounded-2xl border border-base-300 bg-base-100">
+            <button
+              type="button"
+              phx-click="toggle_add"
+              class="w-full flex items-center justify-between px-4 py-2 text-sm font-semibold"
+            >
+              <span class="flex items-center gap-2">
+                <.icon name="hero-plus-circle" class="size-4" /> Add a picture to this cipher
+              </span>
+              <.icon
+                name={if @show_add, do: "hero-chevron-up", else: "hero-chevron-down"}
+                class="size-4"
+              />
+            </button>
+            <div :if={@show_add} class="p-4 pt-0 space-y-3">
+              <p class="text-sm text-base-content/70">
+                Symbols in the new picture are matched with the ones you already have, so
+                your letters apply to it right away.
+              </p>
+              <.live_component
+                module={SubcipherWeb.PictureUploadComponent}
+                id="add-picture-upload"
+                puzzle={@puzzle}
+              />
+            </div>
+          </section>
         </div>
+
+        <.symbol_key
+          key={@key}
+          images={@images}
+          selected_symbol_id={@selected_symbol_id}
+          duplicates={@duplicates}
+          english_frequency={@english_frequency}
+        />
       </div>
-    </Layouts.app>
+    </div>
     """
   end
 

@@ -82,6 +82,14 @@ defmodule Subcipher.Steps.Cipher do
   @doc "Decodes `text` (the previous step's output) with `params`."
   @callback decode(text :: String.t(), params :: map()) :: String.t()
 
+  @doc """
+  Optional: the reverse of `decode/2`, encoding plain `text` with `params`
+  (`decode(encode(text))` gives `text` back, letters possibly upcased).
+  Ciphers implementing it can be part of an algorithm (`Subcipher.Algorithms`).
+  Ciphers whose settings only fit one text (an anagram's order) don't.
+  """
+  @callback encode(text :: String.t(), params :: map()) :: String.t()
+
   @doc "Optional one-line explanation of the parameters, e.g. the key alphabet."
   @callback summary(params :: map()) :: String.t() | nil
 
@@ -106,7 +114,7 @@ defmodule Subcipher.Steps.Cipher do
   @doc "Optional: where this cipher is used in Old School RuneScape."
   @callback osrs_usage() :: String.t()
 
-  @optional_callbacks summary: 1, suggestions: 2, solve: 2, osrs_usage: 0
+  @optional_callbacks summary: 1, suggestions: 2, solve: 2, osrs_usage: 0, encode: 2
 
   defmacro __using__(_opts) do
     quote do

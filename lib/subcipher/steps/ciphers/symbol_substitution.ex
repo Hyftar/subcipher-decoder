@@ -65,6 +65,46 @@ defmodule Subcipher.Steps.Ciphers.SymbolSubstitution do
   end
 
   @impl true
+  # The mapping read backwards (letters -> symbol), longest substitutions
+  # first ("TH" before "T"). Letters no symbol stands for become "·";
+  # anything else is kept.
+  def encode(text, %{mapping: mapping}) do
+    inverse =
+      mapping
+      |> Enum.sort()
+      |> Enum.reverse()
+      |> Map.new(fn {symbol, letters} -> {String.upcase(letters), symbol} end)
+
+    lengths =
+      inverse |> Map.keys() |> Enum.map(&String.length/1) |> Enum.uniq() |> Enum.sort(:desc)
+
+    encode_symbols(String.upcase(text), inverse, lengths, [])
+  end
+
+  defp encode_symbols("", _inverse, _lengths, acc), do: acc |> Enum.reverse() |> Enum.join()
+
+  defp encode_symbols(text, inverse, lengths, acc) do
+    case Enum.find_value(lengths, &match_symbol(text, inverse, &1)) do
+      {symbol, rest} ->
+        encode_symbols(rest, inverse, lengths, [symbol | acc])
+
+      nil ->
+        {char, rest} = String.split_at(text, 1)
+        out = if char =~ ~r/^[A-Z]$/, do: Alphabet.unknown(), else: char
+        encode_symbols(rest, inverse, lengths, [out | acc])
+    end
+  end
+
+  defp match_symbol(text, inverse, length) do
+    {head, rest} = String.split_at(text, length)
+
+    case inverse do
+      %{^head => symbol} -> {symbol, rest}
+      _ -> nil
+    end
+  end
+
+  @impl true
   def decode(text, %{mapping: mapping}) do
     text
     |> String.graphemes()

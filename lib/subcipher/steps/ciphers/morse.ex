@@ -80,6 +80,26 @@ defmodule Subcipher.Steps.Ciphers.Morse do
   def fields, do: []
 
   @impl true
+  # Letters separated by a space, words by " / ". Characters without a Morse
+  # code become the error signal (8 dots), decoded as unknown.
+  def encode(text, _params) do
+    letters = Map.new(@codes, fn {code, char} -> {char, code} end)
+
+    text
+    |> String.split("\n")
+    |> Enum.map_join("\n", fn line ->
+      line
+      |> String.split(~r/\s+/u, trim: true)
+      |> Enum.map_join(" / ", fn word ->
+        word
+        |> String.upcase()
+        |> String.graphemes()
+        |> Enum.map_join(" ", &Map.get(letters, &1, "........"))
+      end)
+    end)
+  end
+
+  @impl true
   def decode(text, _params) do
     text |> String.split("\n") |> Enum.map_join("\n", &decode_line/1)
   end

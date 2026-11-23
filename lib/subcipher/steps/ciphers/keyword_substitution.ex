@@ -48,6 +48,12 @@ defmodule Subcipher.Steps.Ciphers.KeywordSubstitution do
   end
 
   @impl true
+  def encode(text, %{keyword: keyword}) do
+    alphabet = keyword |> cipher_alphabet() |> String.to_charlist() |> List.to_tuple()
+    Alphabet.map_letters(text, &(elem(alphabet, &1) - ?A))
+  end
+
+  @impl true
   def decode(text, %{keyword: keyword}) do
     # Plain letter i was written as cipher_alphabet[i]: invert that.
     inverse =

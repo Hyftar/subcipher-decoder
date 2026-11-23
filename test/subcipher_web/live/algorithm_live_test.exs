@@ -1,0 +1,106 @@
+defmodule SubcipherWeb.AlgorithmLiveTest do
+  use SubcipherWeb.ConnCase, async: true
+
+  import Phoenix.LiveViewTest
+  import Subcipher.CipherFixtures
+
+  alias Subcipher.{Algorithms, Ciphers, Steps}
+
+  defp text_algorithm do
+    {:ok, puzzle} = Ciphers.create_text_puzzle(%{title: "Secret", input_text: "x"}, "caesar")
+    {:ok, _} = Steps.update_params(hd(puzzle.steps), %{"shift" => "3"})
+    {:ok, algorithm} = Algorithms.create_from_puzzle(Ciphers.get_puzzle!(puzzle.id))
+    algorithm
+  end
+
+  test "encode and decode, with the text after each step", %{conn: conn} do
+    algorithm = text_algorithm()
+    {:ok, view, _} = live(conn, ~p"/algorithms/#{algorithm}")
+
+    assert has_element?(view, "#algorithm-step-1", "Caesar cipher")
+    assert has_element?(view, "#mode-encode[aria-selected=true]")
+
+    view |> form("#text-form", %{text: "Hello"}) |> render_change()
+    assert view |> element("#stage-text-0") |> render() =~ "Hello"
+    assert view |> element("#stage-text-1") |> render() =~ "Khoor"
+
+    view |> element("#mode-decode") |> render_click()
+    assert_patch(view, ~p"/algorithms/#{algorithm}?mode=decode")
+    view |> form("#text-form", %{text: "Khoor"}) |> render_change()
+    assert view |> element("#stage-text-1") |> render() =~ "Hello"
+
+    # Each mode keeps its own text.
+    view |> element("#mode-encode") |> render_click()
+    assert view |> element("#algorithm-text") |> render() =~ "Hello"
+  end
+
+  test "a pictures algorithm draws symbols, and decodes clicked symbols", %{conn: conn} do
+    puzzle = puzzle_fixture()
+
+    for {symbol_id, letter} <- solution(puzzle) do
+      {:ok, _} = Ciphers.assign_letter(Enum.find(puzzle.symbols, &(&1.id == symbol_id)), letter)
+    end
+
+    {:ok, algorithm} = Algorithms.create_from_puzzle(Ciphers.get_puzzle!(puzzle.id))
+    {:ok, view, _} = live(conn, ~p"/algorithms/#{algorithm}")
+
+    view |> form("#text-form", %{text: "hi"}) |> render_change()
+    assert has_element?(view, "#stage-symbols-1 span[style*='background-image']")
+
+    {:ok, view, _} = live(conn, ~p"/algorithms/#{algorithm}?mode=decode")
+    refute has_element?(view, "#text-form")
+    h = Enum.find_index(algorithm.symbol_key, &(&1["letter"] == "H"))
+    i = Enum.find_index(algorithm.symbol_key, &(&1["letter"] == "I"))
+
+    view |> element("#key-#{h}") |> render_click()
+    view |> element("#key-#{i}") |> render_click()
+    assert view |> element("#stage-text-1") |> render() =~ "HI"
+
+    view |> element("#key-backspace") |> render_click()
+    assert view |> element("#stage-text-1") |> render() =~ "H"
+    refute view |> element("#stage-text-1") |> render() =~ "HI"
+  end
+
+  test "space and new line keys of the symbol keyboard", %{conn: conn} do
+    puzzle = puzzle_fixture()
+
+    for {symbol_id, letter} <- solution(puzzle) do
+      {:ok, _} = Ciphers.assign_letter(Enum.find(puzzle.symbols, &(&1.id == symbol_id)), letter)
+    end
+
+    {:ok, algorithm} = Algorithms.create_from_puzzle(Ciphers.get_puzzle!(puzzle.id))
+    {:ok, view, _} = live(conn, ~p"/algorithms/#{algorithm}?mode=decode")
+    a = Enum.find_index(algorithm.symbol_key, &(&1["letter"] == "A"))
+    b = Enum.find_index(algorithm.symbol_key, &(&1["letter"] == "B"))
+
+    view |> element("#key-#{a}") |> render_click()
+    view |> element("#key-space") |> render_click()
+    view |> element("#key-#{b}") |> render_click()
+    view |> element("#key-newline") |> render_click()
+    view |> element("#key-#{a}") |> render_click()
+
+    assert view |> element("#stage-text-1") |> render() =~ "A B\nA"
+  end
+
+  test "made from the puzzle page, listed on the home page", %{conn: conn} do
+    {:ok, puzzle} = Ciphers.create_text_puzzle(%{title: "Note", input_text: "Khoor"}, "caesar")
+    {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
+
+    {:ok, _view, html} =
+      view |> element("#make-algorithm") |> render_click() |> follow_redirect(conn)
+
+    assert html =~ "Algorithm created"
+    [algorithm] = Algorithms.list_algorithms()
+
+    {:ok, home, _} = live(conn, ~p"/")
+    assert has_element?(home, "#algorithm-#{algorithm.id}", "Caesar cipher")
+  end
+
+  test "puzzles that can't become an algorithm explain why", %{conn: conn} do
+    {:ok, puzzle} = Ciphers.create_text_puzzle(%{title: "Clue", input_text: "I CORD"}, "anagram")
+    {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
+
+    assert view |> element("#make-algorithm") |> render_click() =~ "can&#39;t be reversed"
+    assert Algorithms.list_algorithms() == []
+  end
+end

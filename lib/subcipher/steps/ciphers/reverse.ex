@@ -33,6 +33,10 @@ defmodule Subcipher.Steps.Ciphers.Reverse do
   end
 
   @impl true
+  # Reversing is its own reverse, in every mode.
+  def encode(text, params), do: decode(text, params)
+
+  @impl true
   def decode(text, %{mode: "text"}), do: String.reverse(text)
 
   def decode(text, %{mode: "lines"}) do

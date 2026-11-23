@@ -39,7 +39,14 @@ defmodule Subcipher.Steps.Ciphers.Vigenere do
   end
 
   @impl true
-  def decode(text, %{key: key}) do
+  def encode(text, %{key: key}), do: shift_by_key(text, key, 1)
+
+  @impl true
+  def decode(text, %{key: key}), do: shift_by_key(text, key, -1)
+
+  # Shifts each letter by the matching key letter, forward (1) or back (-1);
+  # the key only advances on letters.
+  defp shift_by_key(text, key, direction) do
     case for(<<c <- String.upcase(key || "")>>, c in ?A..?Z, do: c - ?A) do
       [] ->
         text
@@ -53,7 +60,7 @@ defmodule Subcipher.Steps.Ciphers.Vigenere do
           |> Enum.map_reduce(0, fn char, i ->
             if char =~ ~r/^[A-Za-z]$/ do
               shift = elem(shifts, rem(i, tuple_size(shifts)))
-              {Alphabet.map_letters(char, &rem(&1 - shift + 26, 26)), i + 1}
+              {Alphabet.map_letters(char, &rem(&1 + direction * shift + 26, 26)), i + 1}
             else
               {char, i}
             end

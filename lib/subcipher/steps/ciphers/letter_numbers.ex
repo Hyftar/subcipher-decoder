@@ -35,6 +35,24 @@ defmodule Subcipher.Steps.Ciphers.LetterNumbers do
   end
 
   @impl true
+  # Letters become numbers separated by spaces, words separated by " | ";
+  # anything but letters is left out.
+  def encode(text, %{first: first}) do
+    first = String.to_integer(first)
+
+    text
+    |> String.split("\n")
+    |> Enum.map_join("\n", fn line ->
+      line
+      |> String.upcase()
+      |> String.split(~r/[^A-Z]+/, trim: true)
+      |> Enum.map_join(" | ", fn word ->
+        for(<<c <- word>>, do: Integer.to_string(c - ?A + first)) |> Enum.join(" ")
+      end)
+    end)
+  end
+
+  @impl true
   def decode(text, %{first: first}) do
     first = String.to_integer(first)
     text |> String.split("\n") |> Enum.map_join("\n", &decode_line(&1, first))

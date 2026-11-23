@@ -39,6 +39,11 @@ defmodule Subcipher.Steps.Ciphers.Caesar do
   end
 
   @impl true
+  def encode(text, %{shift: shift}) do
+    Alphabet.map_letters(text, &rem(&1 + shift, 26))
+  end
+
+  @impl true
   def decode(text, %{shift: shift}) do
     Alphabet.map_letters(text, &rem(&1 - shift + 26, 26))
   end

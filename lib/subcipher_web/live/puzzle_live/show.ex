@@ -508,6 +508,24 @@ defmodule SubcipherWeb.PuzzleLive.Show do
     end
   end
 
+  def handle_event("make_algorithm", _params, socket) do
+    case Subcipher.Algorithms.create_from_puzzle(socket.assigns.puzzle) do
+      {:ok, algorithm} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Algorithm created: encode or decode any text with these steps.")
+         |> push_navigate(to: ~p"/algorithms/#{algorithm}")}
+
+      {:error, problems} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "This puzzle can't become an algorithm. " <> Enum.join(problems, " ")
+         )}
+    end
+  end
+
   def handle_event("delete_image", %{"id" => id}, socket) do
     image = Enum.find(socket.assigns.puzzle.images, &(to_string(&1.id) == id))
 
@@ -756,6 +774,15 @@ defmodule SubcipherWeb.PuzzleLive.Show do
             </span>
             <progress class="progress progress-primary w-32" value={@solved} max={@symbol_count} />
           </div>
+          <button
+            type="button"
+            id="make-algorithm"
+            class="btn btn-sm btn-soft btn-primary"
+            phx-click="make_algorithm"
+            title="Freeze these steps into an algorithm to encode and decode any text"
+          >
+            <.icon name="hero-cog-6-tooth" class="size-4" /> Make an algorithm
+          </button>
         </div>
 
         <.step_nav puzzle={@puzzle} nodes={@nodes} selected={@selected_step} />

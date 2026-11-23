@@ -13,7 +13,8 @@ defmodule SubcipherWeb.PuzzleLive.Index do
      socket
      |> assign(:page_title, "Puzzles")
      |> assign(:text_form, to_form(Ciphers.change_text_puzzle()))
-     |> assign(:puzzles, Ciphers.list_puzzles())}
+     |> assign(:puzzles, Ciphers.list_puzzles())
+     |> assign(:algorithms, Subcipher.Algorithms.list_algorithms())}
   end
 
   # ?cipher=TYPE: the cipher of the new puzzle (its first step), then the
@@ -213,6 +214,30 @@ defmodule SubcipherWeb.PuzzleLive.Index do
               </button>
             </li>
           </ul>
+
+          <h2 class="pt-4 font-semibold text-base-content/80">Your algorithms</h2>
+          <p :if={@algorithms == []} class="text-sm text-base-content/60">
+            None yet: on a puzzle, "Make an algorithm" freezes its steps to encode and decode
+            any text.
+          </p>
+          <ul id="algorithms" class="space-y-2">
+            <li :for={algorithm <- @algorithms} id={"algorithm-#{algorithm.id}"}>
+              <.link
+                navigate={~p"/algorithms/#{algorithm}"}
+                class="flex items-center gap-3 rounded-xl border border-base-300 bg-base-100 p-2 pr-3 transition hover:border-primary/50 hover:shadow-sm"
+              >
+                <span class="grid place-items-center size-10 rounded-lg bg-primary/10 text-primary shrink-0">
+                  <.icon name="hero-cog-6-tooth" class="size-5" />
+                </span>
+                <span class="min-w-0">
+                  <span class="block font-medium truncate">{algorithm.title}</span>
+                  <span class="block text-xs text-base-content/60">
+                    {algorithm_steps(algorithm)}
+                  </span>
+                </span>
+              </.link>
+            </li>
+          </ul>
         </aside>
       </section>
     </Layouts.app>
@@ -233,6 +258,15 @@ defmodule SubcipherWeb.PuzzleLive.Index do
 
   defp input_switch_label("pictures"), do: "Upload pictures instead"
   defp input_switch_label(_), do: "Have it as text? Paste it instead"
+
+  defp algorithm_steps(algorithm) do
+    names = Enum.map(algorithm.steps, &Steps.cipher!(&1["type"]).name())
+
+    names =
+      if algorithm.input_kind == "pictures", do: ["Symbol substitution" | names], else: names
+
+    Enum.join(names, " → ")
+  end
 
   defp pictures(1), do: "1 picture"
   defp pictures(n), do: "#{n} pictures"

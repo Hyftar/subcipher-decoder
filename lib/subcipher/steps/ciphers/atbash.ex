@@ -19,4 +19,8 @@ defmodule Subcipher.Steps.Ciphers.Atbash do
 
   @impl true
   def decode(text, _params), do: Alphabet.map_letters(text, &(25 - &1))
+
+  # Its own reverse.
+  @impl true
+  def encode(text, params), do: decode(text, params)
 end

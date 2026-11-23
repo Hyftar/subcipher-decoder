@@ -62,6 +62,55 @@ defmodule Subcipher.Steps.CiphersTest do
       end
     end
 
+    # Settings for the round trip of each cipher that can encode.
+    @round_trip_params %{
+      "caesar" => %{"shift" => 11},
+      "keyword_substitution" => %{"keyword" => "Zebras"},
+      "vigenere" => %{"key" => "LEMON"},
+      "atbash" => %{},
+      "reverse" => %{"mode" => "words"},
+      "morse" => %{},
+      "letter_numbers" => %{"first" => "0"},
+      "letter_substitution" => %{
+        "mapping" => Map.new(?A..?Z, &{<<&1>>, <<?A + rem(&1 - ?A + 5, 26)>>})
+      },
+      "symbol_substitution" => %{
+        "mapping" =>
+          Map.new(
+            Enum.zip(
+              ~w(☀ ♪ Θ ♠ Φ ☎ ★ ♣ ♥ ♦ ☂ ✈ ⚓ ☯ ⚑ ✿ ☘ ⌘ Ω Δ Ψ Σ Λ Ξ Π Γ),
+              Enum.map(?A..?Z, &<<&1>>)
+            )
+          )
+      }
+    }
+
+    test "every cipher that can encode round-trips: decode(encode(text)) == text" do
+      text = "Hello World\nthe second line"
+
+      for cipher <- Steps.ciphers(), Steps.implements?(cipher, :encode, 2) do
+        assert Map.has_key?(@round_trip_params, cipher.type()),
+               "add round-trip settings for #{cipher.type()}"
+
+        params =
+          cipher.type()
+          |> Steps.params_changeset(@round_trip_params[cipher.type()])
+          |> Ecto.Changeset.apply_changes()
+
+        encoded = cipher.encode(text, params)
+
+        refute encoded == text and cipher.type() not in ~w(reverse),
+               "#{cipher.type()} didn't encode"
+
+        assert String.upcase(cipher.decode(encoded, params)) == String.upcase(text), cipher.type()
+      end
+    end
+
+    test "an anagram's order only fits its own text: no encode" do
+      {:ok, anagram} = Steps.fetch_cipher("anagram")
+      refute Steps.implements?(anagram, :encode, 2)
+    end
+
     test "types are unique" do
       types = Enum.map(Steps.ciphers(), & &1.type())
       assert types == Enum.uniq(types)

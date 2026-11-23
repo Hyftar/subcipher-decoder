@@ -44,6 +44,19 @@ defmodule Subcipher.Steps.Ciphers.LetterSubstitution do
   defp letter?(_), do: false
 
   @impl true
+  # The mapping read backwards (plain letter -> cipher letter); plain letters
+  # no cipher letter maps to can't be encoded and become "·".
+  def encode(text, %{mapping: mapping}) do
+    inverse =
+      mapping
+      |> Enum.sort()
+      |> Enum.reverse()
+      |> Map.new(fn {<<from>>, <<to>>} -> {to - ?A, from - ?A} end)
+
+    Alphabet.map_letters(text, &Map.get(inverse, &1))
+  end
+
+  @impl true
   def decode(text, %{mapping: mapping}) do
     Alphabet.map_letters(text, fn i ->
       case Map.get(mapping, <<?A + i>>) do

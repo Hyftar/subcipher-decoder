@@ -108,6 +108,22 @@ was suggested and a preview of the result; **Use** applies one.
 Atbash and Morse code have nothing to choose, and anagrams would need a dictionary of NPC
 names, so they don't suggest. The symbols of pictures (step 1) get a frequency match too.
 
+### Algorithms
+
+**Make an algorithm** on a puzzle freezes its steps and settings into an algorithm that can
+encode and decode any text (`/algorithms/:id`, listed on the home page):
+
+* an **Encode** / **Decode** switch, and the text after each step, from input to result;
+* encoding runs the steps backwards with each cipher's `encode/2`. Every cipher has one
+  except **Anagram** (its order only fits the text it was solved on), so a puzzle with an
+  anagram step can't become an algorithm;
+* for a pictures puzzle, the symbol key (a sample glyph per letter) is kept, with copies of
+  the pictures: encoding draws the result with those symbols, and decoding takes symbols
+  composed on an on-screen keyboard of the key. Letters without a symbol are shown as
+  missing.
+
+Its settings can't be changed: edit the puzzle and make a new algorithm instead.
+
 ### Solver
 
 Substitutions (the symbols of pictures, symbol substitution and letter substitution) also
@@ -151,9 +167,10 @@ including the dot shown for symbols that are not deciphered yet.
    (see the Atbash example in that module's docs): `type/0` (stored in the database, never
    change it), `name/0`, `description/0`, `fields/0` (its parameters) and `decode/2`.
    Optional: `validate/1`, `summary/1`, `suggestions/2` (settings to try, each with the
-   reason it was suggested; shown when implemented), `osrs_usage/0`
-   (where the cipher appears in the game) and `input_kinds/0` (what it can start from,
-   `[:text]` by default).
+   reason it was suggested; shown when implemented), `solve/2` (**Try to solve**),
+   `encode/2` (the reverse of `decode/2`, needed to be part of an algorithm),
+   `osrs_usage/0` (where the cipher appears in the game) and `input_kinds/0` (what it can
+   start from, `[:text]` by default).
 2. List it in `@ciphers` in `Subcipher.Steps`.
 
 The parameter form is generated from `fields/0`: `:integer` (an input, or a slider with

@@ -19,6 +19,7 @@ defmodule SubcipherWeb.Router do
 
     live "/", PuzzleLive.Index, :index
     live "/puzzles/:id", PuzzleLive.Show, :show
+    live "/algorithms/:id", AlgorithmLive.Show, :show
   end
 
   # Other scopes may use custom stacks.

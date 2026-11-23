@@ -98,27 +98,46 @@ defmodule SubcipherWeb.StepComponents do
           The new step decodes the output of the last step.
         </p>
       </div>
-      <div class="grid gap-3 sm:grid-cols-2">
-        <button
-          :for={cipher <- Steps.ciphers()}
-          type="button"
-          id={"add-step-#{cipher.type()}"}
-          phx-click="add_step"
-          phx-value-type={cipher.type()}
-          class="group flex flex-col justify-start text-left rounded-xl border border-base-300 p-4 transition hover:border-primary hover:bg-primary/5 hover:-translate-y-0.5 hover:shadow-sm"
-        >
-          <span class="flex items-center justify-between font-semibold">
+      <.cipher_grid id_prefix="add-step-" event="add_step" icon="hero-plus-circle" />
+    </section>
+    """
+  end
+
+  attr :id_prefix, :string, required: true, doc: "card ids: id_prefix <> cipher type"
+  attr :event, :string, required: true, doc: "clicked with phx-value-type"
+  attr :icon, :string, default: "hero-arrow-right-circle"
+  attr :class, :string, default: "sm:grid-cols-2"
+
+  @doc "Every cipher type as a card; clicking one sends `event` with its type."
+  def cipher_grid(assigns) do
+    ~H"""
+    <div class={["grid gap-3", @class]}>
+      <button
+        :for={cipher <- Steps.ciphers()}
+        type="button"
+        id={@id_prefix <> cipher.type()}
+        phx-click={@event}
+        phx-value-type={cipher.type()}
+        class="group flex flex-col justify-start text-left rounded-xl border border-base-300 bg-base-100 p-4 transition hover:border-primary hover:bg-primary/5 hover:-translate-y-0.5 hover:shadow-sm cursor-pointer"
+      >
+        <span class="flex items-center justify-between gap-2 font-semibold">
+          <span class="flex items-center gap-2">
             {cipher.name()}
             <.icon
-              name="hero-plus-circle"
-              class="size-5 text-base-content/30 group-hover:text-primary transition-colors"
+              :if={:pictures in cipher.input_kinds()}
+              name="hero-photo"
+              class="size-4 text-base-content/40"
             />
           </span>
-          <span class="block mt-1 text-sm text-base-content/60">{cipher.description()}</span>
-          <.osrs_usage cipher={cipher} class="mt-2" />
-        </button>
-      </div>
-    </section>
+          <.icon
+            name={@icon}
+            class="size-5 shrink-0 text-base-content/30 group-hover:text-primary transition-colors"
+          />
+        </span>
+        <span class="block mt-1 text-sm text-base-content/60">{cipher.description()}</span>
+        <.osrs_usage cipher={cipher} class="mt-2" />
+      </button>
+    </div>
     """
   end
 
@@ -549,8 +568,8 @@ defmodule SubcipherWeb.StepComponents do
   attr :cipher, :atom, required: true
   attr :class, :string, default: nil
 
-  # Where the cipher is used in Old School RuneScape, if known.
-  defp osrs_usage(assigns) do
+  @doc "Where the cipher is used in Old School RuneScape, if known."
+  def osrs_usage(assigns) do
     assigns =
       assign(assigns,
         usage:
@@ -558,7 +577,7 @@ defmodule SubcipherWeb.StepComponents do
       )
 
     ~H"""
-    <p :if={@usage} class={["flex items-start gap-1.5 text-xs text-base-content/60", @class]}>
+    <p :if={@usage} class={["flex items-center gap-1.5 text-xs text-base-content/60", @class]}>
       <span class="shrink-0 rounded bg-warning/15 px-1 py-px text-[10px] font-bold tracking-wide text-warning">
         OSRS
       </span>

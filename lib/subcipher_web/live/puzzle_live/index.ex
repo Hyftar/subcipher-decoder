@@ -5,37 +5,54 @@ defmodule SubcipherWeb.PuzzleLive.Index do
   alias Subcipher.Ciphers.Puzzle
   alias Subcipher.Steps
 
+  import SubcipherWeb.StepComponents, only: [cipher_grid: 1, osrs_usage: 1]
+
   @impl true
   def mount(_params, _session, socket) do
     {:ok,
      socket
      |> assign(:page_title, "Puzzles")
-     # The kind of input of the new puzzle: "pictures" or "text".
-     |> assign(:input_kind, "pictures")
-     |> assign(:first_step, Steps.ciphers() |> hd() |> then(& &1.type()))
      |> assign(:text_form, to_form(Ciphers.change_text_puzzle()))
      |> assign(:puzzles, Ciphers.list_puzzles())}
   end
 
+  # ?cipher=TYPE: the cipher of the new puzzle (its first step), then the
+  # input it needs. ?input=text|pictures picks among the cipher's input
+  # kinds (Cipher.input_kinds/0), the first one by default.
   @impl true
-  def handle_event("set_input_kind", %{"kind" => kind}, socket) when kind in ~w(pictures text) do
-    {:noreply, assign(socket, :input_kind, kind)}
-  end
+  def handle_params(params, _uri, socket) do
+    cipher =
+      case Steps.fetch_cipher(params["cipher"] || "") do
+        {:ok, cipher} -> cipher
+        :error -> nil
+      end
 
-  def handle_event("validate_text", %{"puzzle" => params} = all, socket) do
-    form = params |> Ciphers.change_text_puzzle() |> Map.put(:action, :validate) |> to_form()
+    kinds = if cipher, do: Enum.map(cipher.input_kinds(), &to_string/1), else: []
+    input = if params["input"] in kinds, do: params["input"], else: List.first(kinds)
 
     {:noreply,
-     assign(socket, text_form: form, first_step: all["first_step"] || socket.assigns.first_step)}
+     socket
+     |> assign(cipher: cipher, input_kind: input, input_kinds: kinds)
+     |> assign(:text_form, to_form(Ciphers.change_text_puzzle()))}
   end
 
-  def handle_event("create_text", %{"puzzle" => params, "first_step" => first_step}, socket) do
-    case Ciphers.create_text_puzzle(params, first_step) do
+  @impl true
+  def handle_event("choose_cipher", %{"type" => type}, socket) do
+    {:noreply, push_patch(socket, to: ~p"/?cipher=#{type}")}
+  end
+
+  def handle_event("validate_text", %{"puzzle" => params}, socket) do
+    form = params |> Ciphers.change_text_puzzle() |> Map.put(:action, :validate) |> to_form()
+    {:noreply, assign(socket, :text_form, form)}
+  end
+
+  def handle_event("create_text", %{"puzzle" => params}, socket) do
+    case Ciphers.create_text_puzzle(params, socket.assigns.cipher.type()) do
       {:ok, puzzle} ->
         {:noreply, push_navigate(socket, to: ~p"/puzzles/#{puzzle}")}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign(socket, text_form: to_form(changeset), first_step: first_step)}
+        {:noreply, assign(socket, :text_form, to_form(changeset))}
 
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Could not create the puzzle.")}
@@ -59,85 +76,82 @@ defmodule SubcipherWeb.PuzzleLive.Index do
       <section class="grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div class="space-y-4">
           <div>
-            <h1 class="text-2xl font-bold tracking-tight">Crack a substitution cipher</h1>
+            <h1 class="text-2xl font-bold tracking-tight">Crack a cipher</h1>
             <p class="text-base-content/70 mt-1">
-              Start from pictures of the cipher text (every symbol is detected and identical
-              symbols are grouped) or from text. Then decode it step by step, each step taking
-              the previous one's output.
+              Choose the cipher, give it the cipher text (or pictures of its symbols), then
+              decode it step by step: more steps can be added, each taking the previous one's
+              output.
             </p>
           </div>
 
-          <div role="tablist" id="input-kind" class="inline-flex rounded-xl bg-base-200 p-1">
-            <button
-              :for={
-                {kind, label, icon} <- [
-                  {"pictures", "Pictures", "hero-photo"},
-                  {"text", "Text", "hero-document-text"}
-                ]
-              }
-              type="button"
-              role="tab"
-              id={"input-kind-#{kind}"}
-              aria-selected={to_string(@input_kind == kind)}
-              phx-click="set_input_kind"
-              phx-value-kind={kind}
-              class={[
-                "flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition",
-                if(@input_kind == kind,
-                  do: "bg-base-100 shadow-sm",
-                  else: "text-base-content/60 hover:text-base-content"
-                )
-              ]}
-            >
-              <.icon name={icon} class="size-4" /> {label}
-            </button>
+          <div :if={!@cipher} id="choose-cipher" class="space-y-3">
+            <h2 class="font-semibold">Which cipher is it?</h2>
+            <.cipher_grid id_prefix="new-cipher-" event="choose_cipher" />
           </div>
 
-          <.live_component
-            :if={@input_kind == "pictures"}
-            module={SubcipherWeb.PictureUploadComponent}
-            id="new-puzzle"
-          />
+          <div :if={@cipher} id="new-puzzle-input" class="space-y-4">
+            <div class="flex items-start gap-3 rounded-xl border border-primary/40 bg-primary/5 p-4">
+              <div class="flex-1 min-w-0 space-y-1">
+                <p class="font-semibold">{@cipher.name()}</p>
+                <p class="text-sm text-base-content/60">{@cipher.description()}</p>
+                <.osrs_usage cipher={@cipher} />
+              </div>
+              <.link patch={~p"/"} id="change-cipher" class="btn btn-ghost btn-sm shrink-0">
+                <.icon name="hero-arrow-path-rounded-square" class="size-4" /> Change
+              </.link>
+            </div>
 
-          <.form
-            :if={@input_kind == "text"}
-            for={@text_form}
-            id="new-text-puzzle-form"
-            phx-change="validate_text"
-            phx-submit="create_text"
-            class="space-y-1"
-          >
-            <.input
-              field={@text_form[:input_text]}
-              type="textarea"
-              label="Cipher text"
-              rows="7"
-              placeholder="Paste the cipher text here"
-              class="w-full textarea font-mono text-lg leading-relaxed"
-            />
-            <div class="grid gap-x-3 sm:grid-cols-2">
-              <.input field={@text_form[:title]} label="Title" placeholder="Zodiac 408" />
-              <.input
-                type="select"
-                name="first_step"
-                id="first-step"
-                label="First step"
-                value={@first_step}
-                options={Enum.map(Steps.ciphers(), &{&1.name(), &1.type()})}
-              />
-            </div>
-            <div class="flex justify-end">
-              <.button variant="primary" class="btn btn-primary" phx-disable-with="Creating…">
-                Start decoding <.icon name="hero-arrow-right" class="size-4" />
-              </.button>
-            </div>
-          </.form>
+            <%= if @input_kind == "pictures" do %>
+              <.live_component module={SubcipherWeb.PictureUploadComponent} id="new-puzzle" />
+            <% else %>
+              <.form
+                for={@text_form}
+                id="new-text-puzzle-form"
+                phx-change="validate_text"
+                phx-submit="create_text"
+                class="space-y-1"
+              >
+                <.input
+                  field={@text_form[:input_text]}
+                  type="textarea"
+                  label="Cipher text"
+                  rows="7"
+                  placeholder={placeholder(@cipher)}
+                  class="w-full textarea font-mono text-lg leading-relaxed"
+                />
+                <div class="flex flex-col sm:flex-row gap-3 sm:items-end">
+                  <div class="flex-1">
+                    <.input field={@text_form[:title]} label="Title" placeholder="Zodiac 408" />
+                  </div>
+                  <.button
+                    variant="primary"
+                    class="btn btn-primary mb-2"
+                    phx-disable-with="Creating…"
+                  >
+                    Start decoding <.icon name="hero-arrow-right" class="size-4" />
+                  </.button>
+                </div>
+              </.form>
+            <% end %>
+
+            <p :if={length(@input_kinds) > 1} class="text-sm text-base-content/60">
+              <%= for kind <- @input_kinds, kind != @input_kind do %>
+                <.link
+                  patch={~p"/?cipher=#{@cipher.type()}&input=#{kind}"}
+                  id={"use-input-#{kind}"}
+                  class="link link-hover inline-flex items-center gap-1"
+                >
+                  <.icon name={input_icon(kind)} class="size-4" /> {input_switch_label(kind)}
+                </.link>
+              <% end %>
+            </p>
+          </div>
         </div>
 
         <aside class="space-y-3">
           <h2 class="font-semibold text-base-content/80">Your puzzles</h2>
           <p :if={@puzzles == []} class="text-sm text-base-content/60">
-            No puzzles yet. Upload a picture to get started.
+            No puzzles yet. Choose a cipher to get started.
           </p>
           <ul id="puzzles" class="space-y-2">
             <li
@@ -204,6 +218,21 @@ defmodule SubcipherWeb.PuzzleLive.Index do
     </Layouts.app>
     """
   end
+
+  defp placeholder(cipher) do
+    case cipher.type() do
+      "morse" -> "-- --- .-. ... . / -.-. --- -.. ."
+      "letter_numbers" -> "8 5 12 12 15 | 23 15 18 12 4"
+      "symbol_substitution" -> "☀♪Θ ♠Φ☎Θ"
+      _ -> "Paste the cipher text here"
+    end
+  end
+
+  defp input_icon("pictures"), do: "hero-photo"
+  defp input_icon(_), do: "hero-document-text"
+
+  defp input_switch_label("pictures"), do: "Upload pictures instead"
+  defp input_switch_label(_), do: "Have it as text? Paste it instead"
 
   defp pictures(1), do: "1 picture"
   defp pictures(n), do: "#{n} pictures"

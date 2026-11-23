@@ -1,11 +1,13 @@
 # Subcipher
 
-A Phoenix LiveView workbench for cracking simple substitution ciphers from a picture.
+A Phoenix LiveView workbench for cracking ciphers, from text or from pictures of symbols.
 
-1. Upload (pick, drag & drop or paste) a picture of the cipher text.
-2. Every symbol is detected and identical symbols are grouped together.
-3. Click a symbol and type the letter it stands for: every identical symbol is
-   replaced at once, until the message is revealed.
+1. Choose the cipher (symbol substitution, Caesar, Vigenère, Morse, anagram...).
+2. Give it its input: the cipher text, or for symbol substitution, pictures (pick, drag &
+   drop or paste) in which every symbol is detected and identical symbols are grouped.
+3. Decode it: for symbols, click one and type the letter it stands for, and every
+   identical symbol is replaced at once. Add more steps when the result is itself
+   enciphered.
 
 ## Getting started
 
@@ -53,11 +55,12 @@ several pictures; they share the same symbols.
 
 ## Decoding steps
 
-A cipher starts from either **pictures** or **text** (chosen when creating it):
+The home page lists every cipher; choosing one asks for the input it needs (declared by the
+cipher's `input_kinds/0`):
 
-* pictures — step 1 is the substitution of the symbols detected in the pictures (it is the
-  only step that can read pictures);
-* text — the cipher text is pasted in (and editable on step 1); step 1 can be any cipher.
+* pictures — only symbol substitution so far: step 1 is the substitution of the symbols
+  detected in the pictures (it can also start from typed symbols instead);
+* text — the cipher text is pasted in (and editable on step 1).
 
 Then each step decodes the output of the previous one. The steps are shown as connected
 circles at the top of the page: click one to open it (`?step=N` in the URL), or the last one,

@@ -5,9 +5,15 @@ defmodule SubcipherWeb.PuzzleLiveTest do
   import Subcipher.CipherFixtures
 
   describe "Index" do
-    test "uploads a picture and creates a puzzle", %{conn: conn} do
-      {:ok, view, html} = live(conn, ~p"/")
-      assert html =~ "Crack a substitution cipher"
+    test "symbol substitution asks for a picture, then creates a puzzle", %{conn: conn} do
+      {:ok, view, _} = live(conn, ~p"/")
+      assert has_element?(view, "#choose-cipher")
+      refute has_element?(view, "#new-puzzle-form")
+
+      view |> element("#new-cipher-symbol_substitution") |> render_click()
+      assert_patch(view, ~p"/?cipher=symbol_substitution")
+      refute has_element?(view, "#choose-cipher")
+      assert has_element?(view, "#new-puzzle-input", "Symbol substitution")
 
       image =
         file_input(view, "#new-puzzle-form", :image, [
@@ -39,7 +45,7 @@ defmodule SubcipherWeb.PuzzleLiveTest do
     end
 
     test "cannot submit when the picture itself was rejected", %{conn: conn} do
-      {:ok, view, _} = live(conn, ~p"/")
+      {:ok, view, _} = live(conn, ~p"/?cipher=symbol_substitution")
 
       view
       |> file_input("#new-puzzle-form", :image, [
@@ -55,7 +61,7 @@ defmodule SubcipherWeb.PuzzleLiveTest do
     end
 
     test "reports pictures without symbols", %{conn: conn} do
-      {:ok, view, _} = live(conn, ~p"/")
+      {:ok, view, _} = live(conn, ~p"/?cipher=symbol_substitution")
 
       view
       |> element("#new-puzzle-dropzone")

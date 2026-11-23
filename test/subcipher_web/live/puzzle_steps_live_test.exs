@@ -148,15 +148,19 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
   end
 
   describe "text puzzles" do
-    test "are created from text, with any cipher as step 1", %{conn: conn} do
+    test "choosing a text cipher asks for the cipher text", %{conn: conn} do
       {:ok, view, _} = live(conn, ~p"/")
-      view |> element("#input-kind-text") |> render_click()
+      view |> element("#new-cipher-caesar") |> render_click()
+      assert_patch(view, ~p"/?cipher=caesar")
+      assert has_element?(view, "#new-puzzle-input", "Caesar cipher")
+      refute has_element?(view, "#new-puzzle-form")
+      # Only symbol substitution can start from pictures.
+      refute has_element?(view, "#use-input-pictures")
 
       {:ok, view, _} =
         view
         |> form("#new-text-puzzle-form",
-          puzzle: %{title: "Note", input_text: "Wkh txlfn eurzq ira"},
-          first_step: "caesar"
+          puzzle: %{title: "Note", input_text: "Wkh txlfn eurzq ira"}
         )
         |> render_submit()
         |> follow_redirect(conn)
@@ -171,15 +175,41 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
       assert output(view, step) =~ "The quick brown fox"
     end
 
+    test "symbol substitution can also start from text", %{conn: conn} do
+      {:ok, view, _} = live(conn, ~p"/?cipher=symbol_substitution")
+      assert has_element?(view, "#new-puzzle-form")
+
+      view |> element("#use-input-text") |> render_click()
+      assert_patch(view, ~p"/?cipher=symbol_substitution&input=text")
+      refute has_element?(view, "#new-puzzle-form")
+      assert has_element?(view, "#use-input-pictures")
+
+      {:ok, _view, _} =
+        view
+        |> form("#new-text-puzzle-form", puzzle: %{title: "Stars", input_text: "☀♪Θ ☀"})
+        |> render_submit()
+        |> follow_redirect(conn)
+
+      [%{puzzle: puzzle}] = Ciphers.list_puzzles()
+      assert puzzle.input_kind == "text"
+      assert [%{type: "symbol_substitution"}] = Steps.list_steps(puzzle)
+    end
+
+    test "change cipher goes back to the choice; unknown ciphers are ignored", %{conn: conn} do
+      {:ok, view, _} = live(conn, ~p"/?cipher=vigenere")
+      view |> element("#change-cipher") |> render_click()
+      assert_patch(view, ~p"/")
+      assert has_element?(view, "#choose-cipher")
+
+      {:ok, view, _} = live(conn, ~p"/?cipher=enigma")
+      assert has_element?(view, "#choose-cipher")
+    end
+
     test "require a text", %{conn: conn} do
-      {:ok, view, _} = live(conn, ~p"/")
-      view |> element("#input-kind-text") |> render_click()
+      {:ok, view, _} = live(conn, ~p"/?cipher=caesar")
 
       view
-      |> form("#new-text-puzzle-form",
-        puzzle: %{title: "Empty", input_text: ""},
-        first_step: "caesar"
-      )
+      |> form("#new-text-puzzle-form", puzzle: %{title: "Empty", input_text: ""})
       |> render_submit()
 
       assert has_element?(view, "#new-text-puzzle-form", "can't be blank")

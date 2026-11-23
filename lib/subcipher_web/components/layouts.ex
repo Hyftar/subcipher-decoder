@@ -43,7 +43,7 @@ defmodule SubcipherWeb.Layouts do
           </span>
           <span class="font-semibold tracking-tight">Subcipher</span>
           <span class="hidden sm:inline text-xs text-base-content/50">
-            substitution cipher workbench
+            cipher workbench
           </span>
         </.link>
         <.theme_toggle />

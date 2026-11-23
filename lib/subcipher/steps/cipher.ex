@@ -64,6 +64,14 @@ defmodule Subcipher.Steps.Cipher do
   @callback description() :: String.t()
   @callback fields() :: [field()]
 
+  @doc """
+  What a cipher can start from when it is the first step: `:text` (the
+  cipher text is typed or pasted) and/or `:pictures` (symbols detected in
+  pictures; only symbol substitution so far). The first one is the default.
+  Defaults to `[:text]`.
+  """
+  @callback input_kinds() :: [:text | :pictures, ...]
+
   @doc "Extra validations on top of the field types (receives a changeset)."
   @callback validate(Ecto.Changeset.t()) :: Ecto.Changeset.t()
 
@@ -90,7 +98,10 @@ defmodule Subcipher.Steps.Cipher do
       @impl true
       def validate(changeset), do: changeset
 
-      defoverridable validate: 1
+      @impl true
+      def input_kinds, do: [:text]
+
+      defoverridable validate: 1, input_kinds: 0
     end
   end
 end

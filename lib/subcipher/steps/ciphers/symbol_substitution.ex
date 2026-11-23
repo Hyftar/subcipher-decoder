@@ -9,6 +9,10 @@ defmodule Subcipher.Steps.Ciphers.SymbolSubstitution do
   @impl true
   def type, do: "symbol_substitution"
 
+  # Mostly from pictures (symbols are detected), or typed symbols like ☀♪Θ.
+  @impl true
+  def input_kinds, do: [:pictures, :text]
+
   @impl true
   def osrs_usage,
     do:

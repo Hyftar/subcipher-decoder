@@ -13,7 +13,7 @@ defmodule Subcipher.Steps.Ciphers.LetterSubstitution do
 
   @impl true
   def description,
-    do: "Map each letter to another one by hand, like the symbols of step 1."
+    do: "Map each letter to another one by hand, like the symbol substitution cipher"
 
   @impl true
   def fields do

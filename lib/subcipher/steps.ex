@@ -20,7 +20,7 @@ defmodule Subcipher.Steps do
     Caesar,
     KeywordSubstitution,
     LetterNumbers,
-    LetterSubstitution,
+    MixedAlphabet,
     Morse,
     Reverse,
     SymbolSubstitution,
@@ -31,7 +31,7 @@ defmodule Subcipher.Steps do
   # implement Subcipher.Steps.Cipher and list it here.
   @ciphers [
     SymbolSubstitution,
-    LetterSubstitution,
+    MixedAlphabet,
     Caesar,
     KeywordSubstitution,
     Vigenere,

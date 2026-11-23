@@ -47,7 +47,7 @@ defmodule Subcipher.StepsTest do
   test "run/2 chains steps, each decoding the previous output", %{puzzle: puzzle} do
     {:ok, caesar} = Steps.add_step(puzzle, "caesar")
     {:ok, caesar} = Steps.update_params(caesar, %{"shift" => "1"})
-    {:ok, letters} = Steps.add_step(puzzle, "letter_substitution")
+    {:ok, letters} = Steps.add_step(puzzle, "mixed_alphabet")
     {:ok, letters} = Steps.update_params(letters, %{"mapping" => %{"G" => "h", "D" => "i"}})
 
     assert [first, second] = Steps.run("Hej!", [caesar, letters])
@@ -58,7 +58,7 @@ defmodule Subcipher.StepsTest do
 
   test "move_step/2 and delete_step/1", %{puzzle: puzzle} do
     {:ok, a} = Steps.add_step(puzzle, "caesar")
-    {:ok, b} = Steps.add_step(puzzle, "letter_substitution")
+    {:ok, b} = Steps.add_step(puzzle, "mixed_alphabet")
     {:ok, c} = Steps.add_step(puzzle, "keyword_substitution")
 
     assert {:ok, steps} = Steps.move_step(c, :up)

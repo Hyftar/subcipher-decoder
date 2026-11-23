@@ -81,8 +81,8 @@ defmodule Subcipher.SolverTest do
     assert Solver.explain("THE GODFATHER ATTACKED US") =~ "3 of 4 words are English words"
   end
 
-  test "letter substitution: Try to solve finds the alphabet" do
-    {:ok, cipher} = Steps.fetch_cipher("letter_substitution")
+  test "mixed alphabet: Try to solve finds the alphabet" do
+    {:ok, cipher} = Steps.fetch_cipher("mixed_alphabet")
     {plain, encrypted} = encrypt(90, 4, true)
 
     to_text = fn tokens ->

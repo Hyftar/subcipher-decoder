@@ -1,19 +1,21 @@
-defmodule Subcipher.Steps.Ciphers.LetterSubstitution do
+defmodule Subcipher.Steps.Ciphers.MixedAlphabet do
   @moduledoc """
-  Free letter-to-letter substitution, filled in by hand: each cipher letter
-  is mapped to a plain letter. Unmapped letters are shown as "·".
+  Mixed alphabet: a free letter-to-letter substitution (the cipher alphabet
+  is any shuffle of A to Z), filled in by hand: each cipher letter is mapped
+  to a plain letter. Unmapped letters are shown as "·".
   """
   use Subcipher.Steps.Cipher
 
   @impl true
-  def type, do: "letter_substitution"
+  def type, do: "mixed_alphabet"
 
   @impl true
-  def name, do: "Letter substitution"
+  def name, do: "Mixed alphabet"
 
   @impl true
   def description,
-    do: "Map each letter to another one by hand, like the symbol substitution cipher."
+    do:
+      "The alphabet shuffled: map each letter to another one by hand, like the symbol substitution cipher."
 
   @impl true
   def fields do

@@ -116,7 +116,7 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
     test "steps chain, and a step's cipher can be changed", %{conn: conn, puzzle: puzzle} do
       {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
       _caesar = add_step(view, puzzle, "caesar")
-      letters = add_step(view, puzzle, "letter_substitution")
+      letters = add_step(view, puzzle, "mixed_alphabet")
       assert_patch(view, ~p"/puzzles/#{puzzle}?step=3")
 
       assert view |> element("#step-input-#{letters.id}") |> render() =~ "THE QUICK"
@@ -142,7 +142,7 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
     test "steps can be reordered and removed", %{conn: conn, puzzle: puzzle} do
       {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
       caesar = add_step(view, puzzle, "caesar")
-      letters = add_step(view, puzzle, "letter_substitution")
+      letters = add_step(view, puzzle, "mixed_alphabet")
 
       assert has_element?(view, "#move-step-down-#{letters.id}[disabled]")
       view |> element("#move-step-up-#{letters.id}") |> render_click()

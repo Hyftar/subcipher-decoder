@@ -7,7 +7,7 @@ defmodule Subcipher.Steps.CiphersTest do
   alias Subcipher.Steps.Ciphers.{
     Caesar,
     KeywordSubstitution,
-    LetterSubstitution,
+    MixedAlphabet,
     SymbolSubstitution
   }
 
@@ -51,7 +51,7 @@ defmodule Subcipher.Steps.CiphersTest do
     end
 
     test "letter ciphers leave everything but letters untouched" do
-      letter_wise = ~w(caesar keyword_substitution letter_substitution vigenere atbash)
+      letter_wise = ~w(caesar keyword_substitution mixed_alphabet vigenere atbash)
 
       for cipher <- Steps.ciphers(), cipher.type() in letter_wise do
         params = cipher.type() |> Steps.params_changeset(%{}) |> Ecto.Changeset.apply_changes()
@@ -71,7 +71,7 @@ defmodule Subcipher.Steps.CiphersTest do
       "reverse" => %{"mode" => "words"},
       "morse" => %{},
       "letter_numbers" => %{"first" => "0"},
-      "letter_substitution" => %{
+      "mixed_alphabet" => %{
         "mapping" => Map.new(?A..?Z, &{<<&1>>, <<?A + rem(&1 - ?A + 5, 26)>>})
       },
       "symbol_substitution" => %{
@@ -156,28 +156,28 @@ defmodule Subcipher.Steps.CiphersTest do
     end
   end
 
-  describe "Letter substitution" do
+  describe "Mixed alphabet" do
     test "maps cipher letters to plain letters, unknown ones to ·" do
       mapping = %{"X" => "T", "Q" => "H", "Z" => "E"}
-      assert LetterSubstitution.decode("XQZ xqz AB!", %{mapping: mapping}) == "THE the ··!"
+      assert MixedAlphabet.decode("XQZ xqz AB!", %{mapping: mapping}) == "THE the ··!"
     end
 
     test "normalizes input and rejects anything but single letters" do
       changeset =
-        Steps.params_changeset("letter_substitution", %{
+        Steps.params_changeset("mixed_alphabet", %{
           "mapping" => %{"a" => " t ", "B" => "", "C" => "h"}
         })
 
       assert changeset.valid?
       assert Ecto.Changeset.get_field(changeset, :mapping) == %{"A" => "T", "C" => "H"}
 
-      refute Steps.params_changeset("letter_substitution", %{"mapping" => %{"A" => "TH"}}).valid?
-      refute Steps.params_changeset("letter_substitution", %{"mapping" => %{"A" => "1"}}).valid?
+      refute Steps.params_changeset("mixed_alphabet", %{"mapping" => %{"A" => "TH"}}).valid?
+      refute Steps.params_changeset("mixed_alphabet", %{"mapping" => %{"A" => "1"}}).valid?
     end
 
     test "points out plain letters used twice" do
-      assert LetterSubstitution.summary(%{mapping: %{"A" => "E", "B" => "E"}}) =~ "E"
-      assert LetterSubstitution.summary(%{mapping: %{"A" => "E"}}) == nil
+      assert MixedAlphabet.summary(%{mapping: %{"A" => "E", "B" => "E"}}) =~ "E"
+      assert MixedAlphabet.summary(%{mapping: %{"A" => "E"}}) == nil
     end
   end
 

@@ -116,7 +116,7 @@ ciphers:
 
 * **Symbol substitution**: every distinct character is a symbol; replace each one by the
   letter it stands for (one input per symbol, most frequent first).
-* **Letter substitution**: map each letter to another by hand (an alphabet grid showing
+* **Mixed alphabet**: map each letter to another by hand (an alphabet grid showing
   how often each letter appears in the step's input).
 * **Caesar cipher**: a shift.
 * **Keyword substitution**: the cipher alphabet is a keyword followed by the rest of the
@@ -142,7 +142,7 @@ was suggested and a preview of the result; **Use** applies one.
 | Caesar | all 26 shifts tried, the 5 with the most English-like letter frequencies kept |
 | Vigenere | key length from the index of coincidence (how often letters repeat), then each key letter by frequency analysis; needs about 20 letters |
 | Keyword substitution | known keywords tried (`FAITH` from Fallen From Grace, gods of Gielinor, common ones) |
-| Letter substitution | frequency match (most frequent letters to E, T, A, O and so on), Caesar and Atbash alphabets |
+| Mixed alphabet | frequency match (most frequent letters to E, T, A, O and so on), Caesar and Atbash alphabets |
 | Symbol substitution | frequency match; keeping the symbols that are letters already |
 | Letter numbers | A = 0 or A = 1, from the numbers present (a 0 or a 26) |
 | Reversed text | the three modes, by the English words and letter pairs they give |
@@ -183,7 +183,7 @@ puzzle and isn't edited.
 
 ### Solver
 
-Substitutions (the symbols of pictures, symbol substitution and letter substitution) also
+Substitutions (the symbols of pictures, symbol substitution and mixed alphabet) also
 have **Try to solve**: `Subcipher.Solver` searches for the letters that make the text read
 most like English (simulated annealing with random restarts), in the background, in a
 second or two. Its reason says how many of the decoded words are English words.

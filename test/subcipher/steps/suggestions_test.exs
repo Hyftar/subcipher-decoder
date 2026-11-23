@@ -129,8 +129,8 @@ defmodule Subcipher.Steps.SuggestionsTest do
     assert "fox brown quick the" in previews
   end
 
-  test "Letter substitution: frequency match, Caesar- and Atbash-shaped alphabets" do
-    {:ok, letters} = Steps.fetch_cipher("letter_substitution")
+  test "Mixed alphabet: frequency match, Caesar- and Atbash-shaped alphabets" do
+    {:ok, letters} = Steps.fetch_cipher("mixed_alphabet")
     input = Caesar.decode(@english, %{shift: 26 - 4})
     suggestions = Steps.suggestions(letters, input, %{mapping: %{}})
 

@@ -2,8 +2,11 @@ defmodule SubcipherWeb.PuzzleLive.Show do
   use SubcipherWeb, :live_view
 
   alias Subcipher.Ciphers
+  alias Subcipher.Accounts.Scope
   alias Subcipher.Ciphers.Puzzle
   alias Subcipher.Steps
+
+  import SubcipherWeb.VisibilityComponents, only: [visibility_toggle: 1]
 
   import SubcipherWeb.StepComponents,
     only: [step_card: 1, output: 1, step_nav: 1, add_step_panel: 1, suggestions_panel: 1]
@@ -14,11 +17,11 @@ defmodule SubcipherWeb.PuzzleLive.Show do
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
-    case Ciphers.get_puzzle(id) do
+    case Ciphers.get_puzzle_for(socket.assigns.current_scope, id) do
       nil ->
         {:ok,
          socket
-         |> put_flash(:error, "This puzzle doesn't exist anymore.")
+         |> put_flash(:error, "This puzzle doesn't exist, or it is private.")
          |> push_navigate(to: ~p"/")}
 
       puzzle ->
@@ -28,6 +31,8 @@ defmodule SubcipherWeb.PuzzleLive.Show do
 
   defp init(socket, puzzle) do
     socket
+    # Only the owner changes it; others see a public puzzle read-only.
+    |> assign(:owner?, Scope.owner?(socket.assigns.current_scope, puzzle))
     |> assign(:page_title, puzzle.title)
     |> assign(:selected_symbol_id, nil)
     |> assign(:selected_glyph_id, nil)
@@ -324,7 +329,37 @@ defmodule SubcipherWeb.PuzzleLive.Show do
 
   ## Events
 
+  # What visitors of a public puzzle may do: look around (select, navigate,
+  # open panels). Every other event changes the puzzle: owner only.
+  @viewer_events ~w(select_glyph select_symbol deselect key toggle_glyphs edit_glyph glyph_view toggle_image)
+  @navigation_keys ~w(ArrowLeft ArrowRight ArrowUp ArrowDown Tab Escape)
+
   @impl true
+  def handle_event("key", %{"key" => key}, %{assigns: %{owner?: false}} = socket)
+      when key not in @navigation_keys,
+      do: {:noreply, socket}
+
+  def handle_event(event, _params, %{assigns: %{owner?: false}} = socket)
+      when event not in @viewer_events,
+      do:
+        {:noreply,
+         put_flash(socket, :error, "This puzzle is read-only: it belongs to someone else.")}
+
+  def handle_event("toggle_public", _params, socket) do
+    {:ok, puzzle} = Ciphers.set_public(socket.assigns.puzzle, !socket.assigns.puzzle.public)
+
+    {:noreply,
+     socket
+     |> assign(:puzzle, %{socket.assigns.puzzle | public: puzzle.public})
+     |> put_flash(
+       :info,
+       if(puzzle.public,
+         do: "Public: everyone can see it, read-only.",
+         else: "Private: only you can see it."
+       )
+     )}
+  end
+
   def handle_event("select_glyph", %{"id" => id}, socket) do
     case Enum.find(socket.assigns.puzzle.glyphs, &(to_string(&1.id) == id)) do
       nil -> {:noreply, socket}
@@ -577,7 +612,10 @@ defmodule SubcipherWeb.PuzzleLive.Show do
   end
 
   def handle_event("make_algorithm", _params, socket) do
-    case Subcipher.Algorithms.create_from_puzzle(socket.assigns.puzzle) do
+    case Subcipher.Algorithms.create_from_puzzle(
+           socket.assigns.current_scope,
+           socket.assigns.puzzle
+         ) do
       {:ok, algorithm} ->
         {:noreply,
          socket
@@ -823,34 +861,40 @@ defmodule SubcipherWeb.PuzzleLive.Show do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash}>
+    <Layouts.app flash={@flash} current_scope={@current_scope}>
       <div id="puzzle-page" class="space-y-6">
         <div class="flex flex-wrap items-center gap-3">
           <.link navigate={~p"/"} class="btn btn-ghost btn-sm btn-square" aria-label="Back">
             <.icon name="hero-arrow-left" class="size-5" />
           </.link>
-          <.form
-            for={@title_form}
-            id="title-form"
-            phx-submit="rename"
-            class="flex-1 min-w-48"
-          >
-            <input
-              type="text"
-              name={@title_form[:title].name}
-              value={@title_form[:title].value}
-              phx-blur="rename_blur"
-              aria-label="Title"
-              class="w-full bg-transparent text-2xl font-bold tracking-tight rounded-md px-1 -mx-1 focus:outline-none focus:ring-2 focus:ring-primary/40"
-            />
-          </.form>
+          <%= if @owner? do %>
+            <.form
+              for={@title_form}
+              id="title-form"
+              phx-submit="rename"
+              class="flex-1 min-w-48"
+            >
+              <input
+                type="text"
+                name={@title_form[:title].name}
+                value={@title_form[:title].value}
+                phx-blur="rename_blur"
+                aria-label="Title"
+                class="w-full bg-transparent text-2xl font-bold tracking-tight rounded-md px-1 -mx-1 focus:outline-none focus:ring-2 focus:ring-primary/40"
+              />
+            </.form>
+          <% else %>
+            <h1 class="flex-1 min-w-48 text-2xl font-bold tracking-tight">{@puzzle.title}</h1>
+          <% end %>
           <div :if={Puzzle.pictures?(@puzzle)} class="flex items-center gap-3 text-sm">
             <span class="text-base-content/70" id="progress">
               {@solved} / {@symbol_count} symbols
             </span>
             <progress class="progress progress-primary w-32" value={@solved} max={@symbol_count} />
           </div>
+          <.visibility_toggle :if={@owner?} public={@puzzle.public} />
           <button
+            :if={@owner?}
             type="button"
             id="make-algorithm"
             class="btn btn-sm btn-soft btn-primary"
@@ -859,6 +903,17 @@ defmodule SubcipherWeb.PuzzleLive.Show do
           >
             <.icon name="hero-cog-6-tooth" class="size-4" /> Make an algorithm
           </button>
+        </div>
+
+        <div
+          :if={!@owner?}
+          id="read-only"
+          class="flex items-center gap-3 rounded-xl bg-info/10 px-4 py-3 text-sm"
+        >
+          <.icon name="hero-eye" class="size-5 shrink-0 text-info" />
+          <p>
+            A puzzle shared by someone else: you can look around, but not change it.
+          </p>
         </div>
 
         <.step_nav puzzle={@puzzle} nodes={@nodes} selected={@selected_step} />
@@ -897,6 +952,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
               show_add={@show_add}
               show_glyphs={@show_glyphs}
               edited_glyph_id={@edited_glyph_id}
+              current_scope={@current_scope}
               glyph_view={@glyph_view}
               tolerance={@tolerance}
               english_frequency={@english_frequency}
@@ -945,6 +1001,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
   attr :show_add, :boolean, required: true
   attr :show_glyphs, :boolean, required: true
   attr :edited_glyph_id, :any, required: true
+  attr :current_scope, :any, required: true
   attr :glyph_view, :string, required: true
   attr :tolerance, :integer, required: true
   attr :english_frequency, :string, required: true
@@ -1167,6 +1224,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
                 module={SubcipherWeb.PictureUploadComponent}
                 id="add-picture-upload"
                 puzzle={@puzzle}
+                scope={@current_scope}
               />
             </div>
           </section>

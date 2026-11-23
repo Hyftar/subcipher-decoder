@@ -2,10 +2,17 @@ defmodule Subcipher.AlgorithmsTest do
   use Subcipher.DataCase, async: true
 
   import Subcipher.CipherFixtures
+  import Subcipher.AccountsFixtures, only: [user_scope_fixture: 0]
   alias Subcipher.{Algorithms, Ciphers, Steps}
 
   defp text_puzzle(steps) do
-    {:ok, puzzle} = Ciphers.create_text_puzzle(%{title: "Chain", input_text: "x"}, "caesar")
+    {:ok, puzzle} =
+      Ciphers.create_text_puzzle(
+        user_scope_fixture(),
+        %{title: "Chain", input_text: "x"},
+        "caesar"
+      )
+
     [first] = puzzle.steps
     {:ok, _} = Steps.update_params(first, %{"shift" => "3"})
 
@@ -32,7 +39,7 @@ defmodule Subcipher.AlgorithmsTest do
 
   test "a text puzzle's steps encode and decode any text" do
     puzzle = text_puzzle([{"vigenere", %{"key" => "LEMON"}}, {"atbash", %{}}])
-    assert {:ok, algorithm} = Algorithms.create_from_puzzle(puzzle)
+    assert {:ok, algorithm} = Algorithms.create_from_puzzle(user_scope_fixture(), puzzle)
     assert algorithm.input_kind == "text"
     assert length(algorithm.steps) == 3
 
@@ -61,7 +68,7 @@ defmodule Subcipher.AlgorithmsTest do
 
   test "settings are frozen: later changes to the puzzle don't affect it" do
     puzzle = text_puzzle([])
-    {:ok, algorithm} = Algorithms.create_from_puzzle(puzzle)
+    {:ok, algorithm} = Algorithms.create_from_puzzle(user_scope_fixture(), puzzle)
     {:ok, _} = Steps.update_params(hd(puzzle.steps), %{"shift" => "10"})
 
     assert final(Algorithms.encode(Algorithms.get_algorithm!(algorithm.id), "abc")) == "def"
@@ -72,7 +79,7 @@ defmodule Subcipher.AlgorithmsTest do
 
     assert [problem] = Algorithms.problems(puzzle)
     assert problem =~ "Step 2 (Anagram) can't be reversed"
-    assert {:error, [^problem]} = Algorithms.create_from_puzzle(puzzle)
+    assert {:error, [^problem]} = Algorithms.create_from_puzzle(user_scope_fixture(), puzzle)
   end
 
   test "a pictures puzzle needs letters in its symbol key" do
@@ -81,10 +88,12 @@ defmodule Subcipher.AlgorithmsTest do
 
   describe "creating and editing" do
     test "an algorithm made from scratch, edited step by step" do
-      assert {:error, :not_reversible} = Algorithms.create_algorithm("anagram")
-      assert {:error, :unknown_cipher} = Algorithms.create_algorithm("nope")
+      assert {:error, :not_reversible} =
+               Algorithms.create_algorithm(user_scope_fixture(), "anagram")
 
-      {:ok, algorithm} = Algorithms.create_algorithm("caesar")
+      assert {:error, :unknown_cipher} = Algorithms.create_algorithm(user_scope_fixture(), "nope")
+
+      {:ok, algorithm} = Algorithms.create_algorithm(user_scope_fixture(), "caesar")
       assert algorithm.source_puzzle_id == nil and algorithm.input_kind == "text"
       assert [%{"type" => "caesar"}] = algorithm.steps
 
@@ -119,7 +128,7 @@ defmodule Subcipher.AlgorithmsTest do
 
     test "one made from a puzzle can be edited without changing the puzzle" do
       puzzle = text_puzzle([])
-      {:ok, algorithm} = Algorithms.create_from_puzzle(puzzle)
+      {:ok, algorithm} = Algorithms.create_from_puzzle(user_scope_fixture(), puzzle)
       {:ok, algorithm} = Algorithms.add_step(algorithm, "atbash")
 
       assert length(algorithm.steps) == 2
@@ -134,7 +143,9 @@ defmodule Subcipher.AlgorithmsTest do
       {:ok, caesar} = Steps.add_step(puzzle, "caesar")
       {:ok, _} = Steps.update_params(caesar, %{"shift" => "5"})
 
-      {:ok, algorithm} = Algorithms.create_from_puzzle(Ciphers.get_puzzle!(puzzle.id))
+      {:ok, algorithm} =
+        Algorithms.create_from_puzzle(user_scope_fixture(), Ciphers.get_puzzle!(puzzle.id))
+
       assert length(algorithm.symbol_key) == 26
 
       encoded = Algorithms.encode(algorithm, "Hello world")
@@ -155,7 +166,9 @@ defmodule Subcipher.AlgorithmsTest do
       {:ok, glyph} =
         Ciphers.trim_glyph(glyph, %{x: glyph.x, y: glyph.y, w: glyph.w - 1, h: glyph.h})
 
-      {:ok, algorithm} = Algorithms.create_from_puzzle(Ciphers.get_puzzle!(puzzle.id))
+      {:ok, algorithm} =
+        Algorithms.create_from_puzzle(user_scope_fixture(), Ciphers.get_puzzle!(puzzle.id))
+
       entry = Enum.find(algorithm.symbol_key, &(&1["letter"] == "E"))
 
       assert Map.take(entry, ~w(x y w h)) == %{
@@ -171,13 +184,15 @@ defmodule Subcipher.AlgorithmsTest do
       q = Enum.find(puzzle.symbols, &(&1.letter == "Q"))
       {:ok, _} = Ciphers.assign_letter(q, nil)
 
-      {:ok, algorithm} = Algorithms.create_from_puzzle(Ciphers.get_puzzle!(puzzle.id))
+      {:ok, algorithm} =
+        Algorithms.create_from_puzzle(user_scope_fixture(), Ciphers.get_puzzle!(puzzle.id))
+
       assert [{:symbol, _}, {:missing, "Q"}] = Algorithms.text_to_symbols(algorithm, "aq")
     end
 
     test "pictures are copied: it survives its puzzle, and is cleaned up" do
       puzzle = solved_pictures_puzzle()
-      {:ok, algorithm} = Algorithms.create_from_puzzle(puzzle)
+      {:ok, algorithm} = Algorithms.create_from_puzzle(user_scope_fixture(), puzzle)
       [%{"path" => path}] = algorithm.images
       file = Path.join(Ciphers.uploads_dir(), Path.basename(path))
 

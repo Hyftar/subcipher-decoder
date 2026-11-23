@@ -4,17 +4,22 @@ defmodule SubcipherWeb.AlgorithmLiveTest do
   import Phoenix.LiveViewTest
   import Subcipher.CipherFixtures
 
+  # Puzzles and algorithms are created for the logged-in user (`scope`).
+  setup :register_and_log_in_user
+
   alias Subcipher.{Algorithms, Ciphers, Steps}
 
-  defp text_algorithm do
-    {:ok, puzzle} = Ciphers.create_text_puzzle(%{title: "Secret", input_text: "x"}, "caesar")
+  defp text_algorithm(scope) do
+    {:ok, puzzle} =
+      Ciphers.create_text_puzzle(scope, %{title: "Secret", input_text: "x"}, "caesar")
+
     {:ok, _} = Steps.update_params(hd(puzzle.steps), %{"shift" => "3"})
-    {:ok, algorithm} = Algorithms.create_from_puzzle(Ciphers.get_puzzle!(puzzle.id))
+    {:ok, algorithm} = Algorithms.create_from_puzzle(scope, Ciphers.get_puzzle!(puzzle.id))
     algorithm
   end
 
-  test "encode and decode, with the text after each step", %{conn: conn} do
-    algorithm = text_algorithm()
+  test "encode and decode, with the text after each step", %{conn: conn, scope: scope} do
+    algorithm = text_algorithm(scope)
     {:ok, view, _} = live(conn, ~p"/algorithms/#{algorithm}")
 
     assert has_element?(view, "#algorithm-step-1", "Caesar cipher")
@@ -34,14 +39,17 @@ defmodule SubcipherWeb.AlgorithmLiveTest do
     assert view |> element("#algorithm-text") |> render() =~ "Hello"
   end
 
-  test "a pictures algorithm draws symbols, and decodes clicked symbols", %{conn: conn} do
-    puzzle = puzzle_fixture()
+  test "a pictures algorithm draws symbols, and decodes clicked symbols", %{
+    conn: conn,
+    scope: scope
+  } do
+    puzzle = puzzle_fixture(scope)
 
     for {symbol_id, letter} <- solution(puzzle) do
       {:ok, _} = Ciphers.assign_letter(Enum.find(puzzle.symbols, &(&1.id == symbol_id)), letter)
     end
 
-    {:ok, algorithm} = Algorithms.create_from_puzzle(Ciphers.get_puzzle!(puzzle.id))
+    {:ok, algorithm} = Algorithms.create_from_puzzle(scope, Ciphers.get_puzzle!(puzzle.id))
     {:ok, view, _} = live(conn, ~p"/algorithms/#{algorithm}")
 
     view |> form("#text-form", %{text: "hi"}) |> render_change()
@@ -71,14 +79,14 @@ defmodule SubcipherWeb.AlgorithmLiveTest do
     |> Jason.decode!()
   end
 
-  test "the encoded image: lines, style, alignment and colours", %{conn: conn} do
-    puzzle = puzzle_fixture()
+  test "the encoded image: lines, style, alignment and colours", %{conn: conn, scope: scope} do
+    puzzle = puzzle_fixture(scope)
 
     for {symbol_id, letter} <- solution(puzzle) do
       {:ok, _} = Ciphers.assign_letter(Enum.find(puzzle.symbols, &(&1.id == symbol_id)), letter)
     end
 
-    {:ok, algorithm} = Algorithms.create_from_puzzle(Ciphers.get_puzzle!(puzzle.id))
+    {:ok, algorithm} = Algorithms.create_from_puzzle(scope, Ciphers.get_puzzle!(puzzle.id))
     {:ok, view, _} = live(conn, ~p"/algorithms/#{algorithm}")
     view |> form("#text-form", %{text: "hi you\nok 1"}) |> render_change()
 
@@ -131,14 +139,14 @@ defmodule SubcipherWeb.AlgorithmLiveTest do
     assert image_spec(view)["ink"] == "auto"
   end
 
-  test "space and new line keys of the symbol keyboard", %{conn: conn} do
-    puzzle = puzzle_fixture()
+  test "space and new line keys of the symbol keyboard", %{conn: conn, scope: scope} do
+    puzzle = puzzle_fixture(scope)
 
     for {symbol_id, letter} <- solution(puzzle) do
       {:ok, _} = Ciphers.assign_letter(Enum.find(puzzle.symbols, &(&1.id == symbol_id)), letter)
     end
 
-    {:ok, algorithm} = Algorithms.create_from_puzzle(Ciphers.get_puzzle!(puzzle.id))
+    {:ok, algorithm} = Algorithms.create_from_puzzle(scope, Ciphers.get_puzzle!(puzzle.id))
     {:ok, view, _} = live(conn, ~p"/algorithms/#{algorithm}?mode=decode")
     a = Enum.find_index(algorithm.symbol_key, &(&1["letter"] == "A"))
     b = Enum.find_index(algorithm.symbol_key, &(&1["letter"] == "B"))
@@ -152,26 +160,30 @@ defmodule SubcipherWeb.AlgorithmLiveTest do
     assert view |> element("#stage-text-1") |> render() =~ "A B\nA"
   end
 
-  test "made from the puzzle page, listed on the home page", %{conn: conn} do
-    {:ok, puzzle} = Ciphers.create_text_puzzle(%{title: "Note", input_text: "Khoor"}, "caesar")
+  test "made from the puzzle page, listed on the home page", %{conn: conn, scope: scope} do
+    {:ok, puzzle} =
+      Ciphers.create_text_puzzle(scope, %{title: "Note", input_text: "Khoor"}, "caesar")
+
     {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
 
     {:ok, _view, html} =
       view |> element("#make-algorithm") |> render_click() |> follow_redirect(conn)
 
     assert html =~ "Algorithm created"
-    [algorithm] = Algorithms.list_algorithms()
+    [algorithm] = Algorithms.list_algorithms(scope)
 
     {:ok, home, _} = live(conn, ~p"/")
     assert has_element?(home, "#algorithm-#{algorithm.id}", "Caesar cipher")
   end
 
-  test "puzzles that can't become an algorithm explain why", %{conn: conn} do
-    {:ok, puzzle} = Ciphers.create_text_puzzle(%{title: "Clue", input_text: "I CORD"}, "anagram")
+  test "puzzles that can't become an algorithm explain why", %{conn: conn, scope: scope} do
+    {:ok, puzzle} =
+      Ciphers.create_text_puzzle(scope, %{title: "Clue", input_text: "I CORD"}, "anagram")
+
     {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
 
     assert view |> element("#make-algorithm") |> render_click() =~ "can&#39;t be reversed"
-    assert Algorithms.list_algorithms() == []
+    assert Algorithms.list_algorithms(scope) == []
   end
 
   test "a deleted or unknown algorithm sends back to the home page", %{conn: conn} do
@@ -183,7 +195,7 @@ defmodule SubcipherWeb.AlgorithmLiveTest do
     end
   end
 
-  test "created from the home page, then edited", %{conn: conn} do
+  test "created from the home page, then edited", %{conn: conn, scope: scope} do
     {:ok, home, _} = live(conn, ~p"/")
     home |> element("#new-algorithm") |> render_click()
     refute has_element?(home, "#new-algorithm-anagram")
@@ -191,7 +203,7 @@ defmodule SubcipherWeb.AlgorithmLiveTest do
     {:error, {:live_redirect, %{to: to}}} =
       home |> element("#new-algorithm-caesar") |> render_click()
 
-    [algorithm] = Algorithms.list_algorithms()
+    [algorithm] = Algorithms.list_algorithms(scope)
     assert to == "/algorithms/#{algorithm.id}?edit=true"
     assert algorithm.source_puzzle_id == nil
 

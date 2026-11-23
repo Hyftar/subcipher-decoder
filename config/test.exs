@@ -1,5 +1,8 @@
 import Config
 
+# Only in tests, remove the complexity from the password hashing algorithm
+config :bcrypt_elixir, :log_rounds, 1
+
 # Configure your database
 #
 # The MIX_TEST_PARTITION environment variable can be used
@@ -37,3 +40,6 @@ config :phoenix,
 
 # Uploaded cipher pictures
 config :subcipher, :uploads_dir, Path.join(System.tmp_dir!(), "subcipher_test_uploads")
+
+# Emails are collected in the test process (Swoosh.TestAssertions).
+config :subcipher, Subcipher.Mailer, adapter: Swoosh.Adapters.Test

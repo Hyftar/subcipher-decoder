@@ -23,6 +23,67 @@ end
 config :subcipher, SubcipherWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+# Email: sent by SMTP when SMTP_HOST is set (MailDev in development, see
+# docker-compose.yml), otherwise kept in memory (Swoosh.Adapters.Local).
+#
+#   SMTP_HOST, SMTP_PORT (default 587, 1025 for MailDev)
+#   SMTP_USERNAME, SMTP_PASSWORD (optional)
+#   SMTP_TLS: "always", "never" or "if_available" (default)
+#   SMTP_SSL: "true" for implicit TLS (port 465)
+#   SMTP_TLS_VERIFY: "false" to accept any certificate (self-signed servers)
+#   MAIL_FROM: sender address, MAIL_FROM_NAME: sender name
+if config_env() != :test do
+  config :subcipher, :mail_from, {
+    System.get_env("MAIL_FROM_NAME", "Subcipher"),
+    System.get_env("MAIL_FROM", "no-reply@subcipher.local")
+  }
+
+  if smtp_host = System.get_env("SMTP_HOST") do
+    tls =
+      case System.get_env("SMTP_TLS", "if_available") do
+        "always" -> :always
+        "never" -> :never
+        _ -> :if_available
+      end
+
+    config :subcipher,
+           Subcipher.Mailer,
+           [
+             adapter: Swoosh.Adapters.SMTP,
+             relay: smtp_host,
+             port: String.to_integer(System.get_env("SMTP_PORT", "587")),
+             ssl: System.get_env("SMTP_SSL") == "true",
+             tls: tls,
+             tls_options:
+               if(System.get_env("SMTP_TLS_VERIFY") == "false",
+                 do: [verify: :verify_none],
+                 else: [
+                   verify: :verify_peer,
+                   cacerts: :public_key.cacerts_get(),
+                   server_name_indication: String.to_charlist(smtp_host),
+                   customize_hostname_check: [
+                     match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+                   ]
+                 ]
+               ),
+             retries: 1,
+             no_mx_lookups: true
+           ] ++
+             if(username = System.get_env("SMTP_USERNAME"),
+               do: [
+                 auth: :always,
+                 username: username,
+                 password: System.get_env("SMTP_PASSWORD", "")
+               ],
+               else: [auth: :never]
+             )
+  else
+    if config_env() == :prod do
+      raise "environment variable SMTP_HOST is missing (needed to send sign-in emails)"
+    end
+  end
+end
+
 if config_env() == :dev do
   # Reload browser tabs when matching files change.
   config :subcipher, SubcipherWeb.Endpoint,

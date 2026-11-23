@@ -9,6 +9,7 @@ defmodule Subcipher.Ciphers do
 
   alias Ecto.Multi
   alias Subcipher.Repo
+  alias Subcipher.Accounts.Scope
   alias Subcipher.Ciphers.{Analysis, Glyph, Image, Puzzle, Symbol}
 
   def default_threshold, do: Analysis.default_threshold()
@@ -16,10 +17,27 @@ defmodule Subcipher.Ciphers do
   ## Puzzles
 
   @doc """
-  Lists puzzles, most recent first, with their pictures and glyph and
-  symbol counts.
+  Lists the puzzles of the scope's user, most recent first, with their
+  pictures and glyph and symbol counts (none without a user).
   """
-  def list_puzzles do
+  def list_puzzles(nil), do: []
+
+  def list_puzzles(%Scope{user: user}),
+    do: list_puzzles_where(dynamic([p], p.user_id == ^user.id))
+
+  @doc "The public puzzles of other users (like `list_puzzles/1`)."
+  def list_public_puzzles(scope) do
+    case scope do
+      %Scope{user: user} ->
+        dynamic([p], p.public and (p.user_id != ^user.id or is_nil(p.user_id)))
+
+      nil ->
+        dynamic([p], p.public)
+    end
+    |> list_puzzles_where()
+  end
+
+  defp list_puzzles_where(condition) do
     glyphs = from g in Glyph, group_by: g.puzzle_id, select: %{puzzle_id: g.puzzle_id, n: count()}
 
     symbols =
@@ -38,6 +56,7 @@ defmodule Subcipher.Ciphers do
         on: g.puzzle_id == p.id,
         left_join: s in subquery(symbols),
         on: s.puzzle_id == p.id,
+        where: ^condition,
         order_by: [desc: p.inserted_at, desc: p.id],
         preload: [images: ^from(i in Image, order_by: i.position)],
         select: %{
@@ -55,6 +74,22 @@ defmodule Subcipher.Ciphers do
       nil -> nil
       id -> if Repo.get(Puzzle, id), do: get_puzzle!(id)
     end
+  end
+
+  @doc """
+  The puzzle with `id` if the scope may see it (its own, or public), else
+  `nil` (missing and private look the same).
+  """
+  def get_puzzle_for(scope, id) do
+    case get_puzzle(id) do
+      nil -> nil
+      puzzle -> if Scope.can_view?(scope, puzzle), do: puzzle
+    end
+  end
+
+  @doc "Makes a puzzle public (seen by everyone, read-only) or private."
+  def set_public(%Puzzle{} = puzzle, public) when is_boolean(public) do
+    puzzle |> Ecto.Changeset.change(public: public) |> Repo.update()
   end
 
   @doc "`id` as a positive integer, or `nil` when it isn't one."
@@ -93,11 +128,14 @@ defmodule Subcipher.Ciphers do
   detected in it (see `Analysis.parse_detection/1`).
 
   `image` is `%{path: tmp_path, ext: ".png", width: w, height: h}`; the file
-  is copied to the uploads directory.
+  is copied to the uploads directory. The puzzle belongs to the scope's user.
   """
-  def create_puzzle(attrs, image, glyphs, opts \\ []) do
+  def create_puzzle(%Scope{user: user}, attrs, image, glyphs, opts \\ []) do
     threshold = Keyword.get(opts, :threshold, default_threshold())
-    changeset = Puzzle.changeset(%Puzzle{}, Map.put(stringify(attrs), "threshold", threshold))
+
+    changeset =
+      %Puzzle{user_id: user.id}
+      |> Puzzle.changeset(Map.put(stringify(attrs), "threshold", threshold))
 
     with {:ok, _} <- validate(changeset),
          {:ok, stored} <- store_file(image) do
@@ -320,12 +358,12 @@ defmodule Subcipher.Ciphers do
 
   @doc """
   Creates a puzzle whose input is text (`attrs`: title, input_text), with a
-  first decoding step of cipher `first_step_type`.
+  first decoding step of cipher `first_step_type`, owned by the scope's user.
   """
-  def create_text_puzzle(attrs, first_step_type) do
+  def create_text_puzzle(%Scope{user: user}, attrs, first_step_type) do
     changeset =
       Puzzle.text_changeset(
-        %Puzzle{},
+        %Puzzle{user_id: user.id},
         Map.put(stringify(attrs), "threshold", default_threshold())
       )
 

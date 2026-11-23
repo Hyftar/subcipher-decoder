@@ -10,7 +10,7 @@ else
 endif
 
 .DEFAULT_GOAL := help
-.PHONY: help setup start iex db-up db-down db-logs db-reset psql \
+.PHONY: help setup start iex db-up db-down db-logs db-reset psql mail \
         test test-js precommit format assets fixtures clean
 
 help: ## Show this help
@@ -26,10 +26,10 @@ start: db-up ## Start the database and the Phoenix server (http://localhost:4000
 iex: db-up ## Start the server inside IEx
 	$(RUN) 'iex -S mix phx.server'
 
-db-up: ## Start PostgreSQL (Docker) and wait until it is ready
+db-up: ## Start PostgreSQL and MailDev (Docker) and wait until they are ready
 	$(RUN) 'docker compose up -d --wait'
 
-db-down: ## Stop PostgreSQL (data is kept)
+db-down: ## Stop PostgreSQL and MailDev (data is kept)
 	$(RUN) 'docker compose down'
 
 db-logs: ## Follow PostgreSQL logs
@@ -37,6 +37,10 @@ db-logs: ## Follow PostgreSQL logs
 
 db-reset: db-up ## Drop, recreate, migrate and seed the dev database
 	$(RUN) 'mix ecto.reset'
+
+mail: ## Open the MailDev inbox (emails sent in development)
+	@echo "MailDev: http://localhost:$${MAILDEV_WEB_PORT:-1080}"
+	-@xdg-open "http://localhost:$${MAILDEV_WEB_PORT:-1080}" >/dev/null 2>&1
 
 psql: db-up ## Open a psql shell on the dev database
 	$(RUN) 'psql postgres://postgres:postgres@localhost:$${POSTGRES_PORT:-5432}/subcipher_dev'

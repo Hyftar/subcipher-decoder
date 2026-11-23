@@ -19,6 +19,11 @@ make setup   # starts PostgreSQL 17 in Docker, fetches deps, creates the databas
 make start   # http://localhost:4000
 ```
 
+`make setup` also seeds the admin user (`ADMIN_EMAIL`, by default `admin@subcipher.local`).
+There are no passwords to start with: log in with your email and open the link sent to it.
+In development, emails go to [MailDev](https://github.com/maildev/maildev), started with
+the database: read them on http://localhost:1080 (`make mail`).
+
 `make help` lists every command (`test`, `test-js`, `precommit`, `iex`, `db-up`, `db-down`,
 `db-reset`, `psql`, `fixtures`, and others). Targets run in the Nix environment
 automatically if you call `make` from outside it.
@@ -27,8 +32,39 @@ automatically if you call `make` from outside it.
   (the app reads the same variable).
 * `shell.nix` sets `DOCKER_CONTEXT=default` so the database runs on the local Docker
   daemon, which the app reaches through `localhost`.
+* Port 1025 or 1080 already taken? `export MAILDEV_SMTP_PORT=...` / `MAILDEV_WEB_PORT=...`.
 * Phoenix normally downloads esbuild/tailwind binaries that don't run on NixOS;
   `MIX_ESBUILD_PATH` / `MIX_TAILWIND_PATH` point it at the Nix ones instead.
+
+## Accounts and sharing
+
+Accounts are made with `phx.gen.auth`: register with an email, then log in with a link
+sent to it (a password can be added in the settings). Without an account, the home page
+only shows what others have shared.
+
+* Puzzles and algorithms belong to the user who made them and are **private** by default.
+* The **Private** / **Public** button on a puzzle or an algorithm shares it: public ones
+  are listed under "Shared by others" on everyone's home page. Others can look at a
+  public puzzle (select symbols, move around) but not change it, and use a public
+  algorithm to encode and decode, but not edit it.
+* Everything made before accounts existed was given to the admin user by the migration
+  that added owners.
+* Uploaded pictures are served from `/uploads/` with random names: a private puzzle's
+  pictures are not listed anywhere, but anyone with their exact URL can open them.
+
+Email is sent by SMTP, configured with environment variables (read at startup, in
+`config/runtime.exs`):
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `SMTP_HOST` | SMTP server; without it, emails are only kept in memory (`/dev/mailbox`) | `localhost` in `nix-shell` (MailDev), required in production |
+| `SMTP_PORT` | SMTP port | `1025` in `nix-shell`, otherwise `587` |
+| `SMTP_USERNAME`, `SMTP_PASSWORD` | Credentials, when the server needs them | none |
+| `SMTP_TLS` | STARTTLS: `always`, `never` or `if_available` | `never` in `nix-shell`, otherwise `if_available` |
+| `SMTP_SSL` | `true` for implicit TLS (usually port 465) | `false` |
+| `SMTP_TLS_VERIFY` | `false` to accept any certificate (self-signed servers) | certificates are verified |
+| `MAIL_FROM`, `MAIL_FROM_NAME` | Sender of the emails | `no-reply@subcipher.local`, `Subcipher` |
+| `ADMIN_EMAIL` | The admin user (seeds, and owner of older data) | `admin@subcipher.local` |
 
 ## How it works
 

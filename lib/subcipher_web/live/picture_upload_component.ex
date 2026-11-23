@@ -31,7 +31,7 @@ defmodule SubcipherWeb.PictureUploadComponent do
 
   @impl true
   def update(assigns, socket) do
-    {:ok, socket |> assign(:puzzle, nil) |> assign(assigns)}
+    {:ok, socket |> assign(:puzzle, nil) |> assign(:scope, nil) |> assign(assigns)}
   end
 
   defp idle, do: %{status: :idle, glyphs: [], width: nil, height: nil, message: nil}
@@ -102,7 +102,15 @@ defmodule SubcipherWeb.PictureUploadComponent do
           height: detection.height
         }
 
-        {:ok, persist(socket.assigns.puzzle, image, entry, params, detection.glyphs)}
+        {:ok,
+         persist(
+           socket.assigns.puzzle,
+           socket.assigns.scope,
+           image,
+           entry,
+           params,
+           detection.glyphs
+         )}
       end)
 
     socket = assign(socket, :detection, idle())
@@ -126,18 +134,20 @@ defmodule SubcipherWeb.PictureUploadComponent do
     end
   end
 
-  defp persist(nil, image, entry, params, glyphs) do
+  defp persist(nil, scope, image, entry, params, glyphs) do
     title =
       case String.trim(params["title"] || "") do
         "" -> Path.rootname(entry.client_name)
         title -> title
       end
 
-    Ciphers.create_puzzle(%{title: title}, image, glyphs)
+    Ciphers.create_puzzle(scope, %{title: title}, image, glyphs)
   end
 
-  defp persist(puzzle, image, _entry, _params, glyphs) do
-    Ciphers.add_image(puzzle, image, glyphs)
+  defp persist(puzzle, scope, image, _entry, _params, glyphs) do
+    if Subcipher.Accounts.Scope.owner?(scope, puzzle),
+      do: Ciphers.add_image(puzzle, image, glyphs),
+      else: {:error, :forbidden}
   end
 
   defp upload_done?(%{entries: [entry]}), do: entry.done? and entry.valid?

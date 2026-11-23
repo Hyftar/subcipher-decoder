@@ -20,6 +20,11 @@ defmodule Subcipher.Algorithms.Algorithm do
 
     belongs_to :source_puzzle, Subcipher.Ciphers.Puzzle
 
+    # Who owns it (set by the context, never cast), and whether everyone can
+    # see it (read-only) or only its owner.
+    belongs_to :user, Subcipher.Accounts.User
+    field :public, :boolean, default: false
+
     timestamps(type: :utc_datetime)
   end
 

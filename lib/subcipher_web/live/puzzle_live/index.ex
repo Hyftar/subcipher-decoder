@@ -1,7 +1,8 @@
 defmodule SubcipherWeb.PuzzleLive.Index do
   use SubcipherWeb, :live_view
 
-  alias Subcipher.Ciphers
+  alias Subcipher.{Algorithms, Ciphers}
+  alias Subcipher.Accounts.Scope
   alias Subcipher.Ciphers.Puzzle
   alias Subcipher.Steps
 
@@ -13,9 +14,19 @@ defmodule SubcipherWeb.PuzzleLive.Index do
      socket
      |> assign(:page_title, "Puzzles")
      |> assign(:text_form, to_form(Ciphers.change_text_puzzle()))
-     |> assign(:puzzles, Ciphers.list_puzzles())
      |> assign(:new_algorithm, false)
-     |> assign(:algorithms, Subcipher.Algorithms.list_algorithms())}
+     |> assign_lists()}
+  end
+
+  # The user's puzzles and algorithms, and the public ones of other users.
+  defp assign_lists(socket) do
+    scope = socket.assigns.current_scope
+
+    socket
+    |> assign(:puzzles, Ciphers.list_puzzles(scope))
+    |> assign(:algorithms, Algorithms.list_algorithms(scope))
+    |> assign(:public_puzzles, Ciphers.list_public_puzzles(scope))
+    |> assign(:public_algorithms, Algorithms.list_public_algorithms(scope))
   end
 
   # ?cipher=TYPE: the cipher of the new puzzle (its first step), then the
@@ -38,14 +49,23 @@ defmodule SubcipherWeb.PuzzleLive.Index do
      |> assign(:text_form, to_form(Ciphers.change_text_puzzle()))}
   end
 
+  # Creating and deleting need an account.
   @impl true
+  def handle_event(event, _params, %{assigns: %{current_scope: nil}} = socket)
+      when event in ~w(create_algorithm create_text delete) do
+    {:noreply,
+     socket
+     |> put_flash(:error, "Log in to create puzzles and algorithms.")
+     |> push_navigate(to: ~p"/users/log-in")}
+  end
+
   def handle_event("toggle_new_algorithm", _params, socket) do
     {:noreply, update(socket, :new_algorithm, &(!&1))}
   end
 
   # A new algorithm opens in its editor.
   def handle_event("create_algorithm", %{"type" => type}, socket) do
-    case Subcipher.Algorithms.create_algorithm(type) do
+    case Algorithms.create_algorithm(socket.assigns.current_scope, type) do
       {:ok, algorithm} ->
         {:noreply, push_navigate(socket, to: ~p"/algorithms/#{algorithm}?edit=true")}
 
@@ -64,7 +84,11 @@ defmodule SubcipherWeb.PuzzleLive.Index do
   end
 
   def handle_event("create_text", %{"puzzle" => params}, socket) do
-    case Ciphers.create_text_puzzle(params, socket.assigns.cipher.type()) do
+    case Ciphers.create_text_puzzle(
+           socket.assigns.current_scope,
+           params,
+           socket.assigns.cipher.type()
+         ) do
       {:ok, puzzle} ->
         {:noreply, push_navigate(socket, to: ~p"/puzzles/#{puzzle}")}
 
@@ -77,19 +101,20 @@ defmodule SubcipherWeb.PuzzleLive.Index do
   end
 
   def handle_event("delete", %{"id" => id}, socket) do
-    puzzle = Ciphers.get_puzzle!(id)
-    {:ok, _} = Ciphers.delete_puzzle(puzzle)
+    puzzle = Ciphers.get_puzzle(id)
 
-    {:noreply,
-     socket
-     |> put_flash(:info, "Puzzle deleted.")
-     |> assign(:puzzles, Ciphers.list_puzzles())}
+    if puzzle && Scope.owner?(socket.assigns.current_scope, puzzle) do
+      {:ok, _} = Ciphers.delete_puzzle(puzzle)
+      {:noreply, socket |> put_flash(:info, "Puzzle deleted.") |> assign_lists()}
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash}>
+    <Layouts.app flash={@flash} current_scope={@current_scope}>
       <section class="grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div class="space-y-4">
           <div>
@@ -101,12 +126,35 @@ defmodule SubcipherWeb.PuzzleLive.Index do
             </p>
           </div>
 
-          <div :if={!@cipher} id="choose-cipher" class="space-y-3">
+          <div
+            :if={!@current_scope}
+            id="sign-up-prompt"
+            class="rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/10 to-base-100 p-6 sm:p-8 space-y-4"
+          >
+            <div class="grid place-items-center size-12 rounded-xl bg-primary text-primary-content">
+              <.icon name="hero-key" class="size-6" />
+            </div>
+            <div class="space-y-1">
+              <h2 class="text-lg font-semibold">Create an account to start decoding</h2>
+              <p class="text-sm text-base-content/70">
+                Your puzzles and algorithms are private unless you share them. Sign up with
+                your email: we send you a link, no password needed.
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <.link navigate={~p"/users/register"} class="btn btn-primary">
+                Sign up <.icon name="hero-arrow-right" class="size-4" />
+              </.link>
+              <.link navigate={~p"/users/log-in"} class="btn btn-ghost">Log in</.link>
+            </div>
+          </div>
+
+          <div :if={@current_scope && !@cipher} id="choose-cipher" class="space-y-3">
             <h2 class="font-semibold">Which cipher is it?</h2>
             <.cipher_grid id_prefix="new-cipher-" event="choose_cipher" />
           </div>
 
-          <div :if={@cipher} id="new-puzzle-input" class="space-y-4">
+          <div :if={@current_scope && @cipher} id="new-puzzle-input" class="space-y-4">
             <div class="flex items-start gap-3 rounded-xl border border-primary/40 bg-primary/5 p-4">
               <div class="flex-1 min-w-0 space-y-1">
                 <p class="font-semibold">{@cipher.name()}</p>
@@ -119,7 +167,11 @@ defmodule SubcipherWeb.PuzzleLive.Index do
             </div>
 
             <%= if @input_kind == "pictures" do %>
-              <.live_component module={SubcipherWeb.PictureUploadComponent} id="new-puzzle" />
+              <.live_component
+                module={SubcipherWeb.PictureUploadComponent}
+                id="new-puzzle"
+                scope={@current_scope}
+              />
             <% else %>
               <.form
                 for={@text_form}
@@ -166,120 +218,172 @@ defmodule SubcipherWeb.PuzzleLive.Index do
         </div>
 
         <aside class="space-y-3">
-          <h2 class="font-semibold text-base-content/80">Your puzzles</h2>
-          <p :if={@puzzles == []} class="text-sm text-base-content/60">
-            No puzzles yet. Choose a cipher to get started.
-          </p>
-          <ul id="puzzles" class="space-y-2">
-            <li
-              :for={%{puzzle: p} = row <- @puzzles}
-              id={"puzzle-#{p.id}"}
-              class="group flex items-center gap-3 rounded-xl border border-base-300 bg-base-100 p-2 pr-3 transition hover:border-primary/50 hover:shadow-sm"
-            >
-              <.link navigate={~p"/puzzles/#{p}"} class="flex flex-1 items-center gap-3 min-w-0">
-                <span class="relative shrink-0">
-                  <span
-                    :if={!Puzzle.pictures?(p)}
-                    class="grid place-items-center size-14 rounded-lg bg-base-200 font-mono text-xs text-base-content/60 overflow-hidden p-1 leading-tight break-all"
-                  >
-                    {String.slice(p.input_text, 0, 24)}
-                  </span>
-                  <img
-                    :if={cover = Puzzle.pictures?(p) && List.first(p.images)}
-                    src={cover.path}
-                    alt=""
-                    class="size-14 rounded-lg object-cover bg-base-200"
-                  />
-                  <span
-                    :if={length(p.images) > 1}
-                    class="absolute -bottom-1 -right-1 badge badge-xs badge-neutral"
-                    title={"#{length(p.images)} pictures"}
-                  >
-                    ×{length(p.images)}
-                  </span>
-                </span>
-                <div class="min-w-0 flex-1">
-                  <p class="font-medium truncate">{p.title}</p>
-                  <p class="text-xs text-base-content/60">
-                    <%= if Puzzle.pictures?(p) do %>
-                      {pictures(length(p.images))} · {row.glyph_count} glyphs · {row.symbol_count} symbols
-                    <% else %>
-                      Text · {String.length(p.input_text)} characters
-                    <% end %>
-                  </p>
-                  <div
-                    :if={Puzzle.pictures?(p)}
-                    class="mt-1 h-1.5 rounded-full bg-base-200 overflow-hidden"
-                  >
-                    <div
-                      class="h-full bg-primary transition-all"
-                      style={"width: #{percent(row.solved_count, row.symbol_count)}%"}
-                    />
-                  </div>
-                </div>
-              </.link>
+          <%= if @current_scope do %>
+            <h2 class="font-semibold text-base-content/80">Your puzzles</h2>
+            <p :if={@puzzles == []} class="text-sm text-base-content/60">
+              No puzzles yet. Choose a cipher to get started.
+            </p>
+            <ul id="puzzles" class="space-y-2">
+              <.puzzle_item :for={row <- @puzzles} row={row} owned />
+            </ul>
+
+            <div class="flex items-center justify-between gap-2 pt-4">
+              <h2 class="font-semibold text-base-content/80">Your algorithms</h2>
               <button
                 type="button"
-                phx-click="delete"
-                phx-value-id={p.id}
-                data-confirm={"Delete “#{p.title}”?"}
-                class="btn btn-ghost btn-sm btn-square opacity-0 group-hover:opacity-100 focus:opacity-100"
-                aria-label={"Delete #{p.title}"}
+                id="new-algorithm"
+                class={["btn btn-sm", if(@new_algorithm, do: "btn-active", else: "btn-ghost")]}
+                phx-click="toggle_new_algorithm"
+                aria-expanded={to_string(@new_algorithm)}
               >
-                <.icon name="hero-trash" class="size-4" />
+                <.icon name="hero-plus" class="size-4" /> New
               </button>
-            </li>
-          </ul>
-
-          <div class="flex items-center justify-between gap-2 pt-4">
-            <h2 class="font-semibold text-base-content/80">Your algorithms</h2>
-            <button
-              type="button"
-              id="new-algorithm"
-              class={["btn btn-sm", if(@new_algorithm, do: "btn-active", else: "btn-ghost")]}
-              phx-click="toggle_new_algorithm"
-              aria-expanded={to_string(@new_algorithm)}
-            >
-              <.icon name="hero-plus" class="size-4" /> New
-            </button>
-          </div>
-          <div :if={@new_algorithm} id="new-algorithm-panel" class="space-y-2">
-            <p class="text-sm text-base-content/60">
-              Its first step (more can be added after):
+            </div>
+            <div :if={@new_algorithm} id="new-algorithm-panel" class="space-y-2">
+              <p class="text-sm text-base-content/60">
+                Its first step (more can be added after):
+              </p>
+              <.cipher_grid
+                id_prefix="new-algorithm-"
+                event="create_algorithm"
+                icon="hero-plus-circle"
+                class="grid-cols-1"
+                ciphers={Algorithms.ciphers()}
+              />
+            </div>
+            <p :if={@algorithms == [] and !@new_algorithm} class="text-sm text-base-content/60">
+              None yet: create one with <strong>New</strong>, or on a puzzle, "Make an algorithm"
+              turns its steps into one, to encode and decode any text.
             </p>
-            <.cipher_grid
-              id_prefix="new-algorithm-"
-              event="create_algorithm"
-              icon="hero-plus-circle"
-              class="grid-cols-1"
-              ciphers={Subcipher.Algorithms.ciphers()}
-            />
+            <ul id="algorithms" class="space-y-2">
+              <.algorithm_item :for={algorithm <- @algorithms} algorithm={algorithm} owned />
+            </ul>
+          <% end %>
+
+          <div
+            :if={@public_puzzles != [] or @public_algorithms != []}
+            id="public"
+            class={["space-y-3", @current_scope && "pt-4"]}
+          >
+            <h2 class="flex items-center gap-2 font-semibold text-base-content/80">
+              <.icon name="hero-globe-alt" class="size-5 text-base-content/50" /> Shared by others
+            </h2>
+            <ul :if={@public_puzzles != []} id="public-puzzles" class="space-y-2">
+              <.puzzle_item :for={row <- @public_puzzles} row={row} />
+            </ul>
+            <ul :if={@public_algorithms != []} id="public-algorithms" class="space-y-2">
+              <.algorithm_item :for={algorithm <- @public_algorithms} algorithm={algorithm} />
+            </ul>
           </div>
-          <p :if={@algorithms == [] and !@new_algorithm} class="text-sm text-base-content/60">
-            None yet: create one with <strong>New</strong>, or on a puzzle, "Make an algorithm"
-            turns its steps into one, to encode and decode any text.
-          </p>
-          <ul id="algorithms" class="space-y-2">
-            <li :for={algorithm <- @algorithms} id={"algorithm-#{algorithm.id}"}>
-              <.link
-                navigate={~p"/algorithms/#{algorithm}"}
-                class="flex items-center gap-3 rounded-xl border border-base-300 bg-base-100 p-2 pr-3 transition hover:border-primary/50 hover:shadow-sm"
-              >
-                <span class="grid place-items-center size-10 rounded-lg bg-primary/10 text-primary shrink-0">
-                  <.icon name="hero-cog-6-tooth" class="size-5" />
-                </span>
-                <span class="min-w-0">
-                  <span class="block font-medium truncate">{algorithm.title}</span>
-                  <span class="block text-xs text-base-content/60">
-                    {algorithm_steps(algorithm)}
-                  </span>
-                </span>
-              </.link>
-            </li>
-          </ul>
         </aside>
       </section>
     </Layouts.app>
+    """
+  end
+
+  attr :row, :map, required: true, doc: "an entry of Ciphers.list_puzzles/1"
+  attr :owned, :boolean, default: false, doc: "the user's own: deletable, shows visibility"
+
+  defp puzzle_item(assigns) do
+    assigns = assign(assigns, :p, assigns.row.puzzle)
+
+    ~H"""
+    <li
+      id={if @owned, do: "puzzle-#{@p.id}", else: "public-puzzle-#{@p.id}"}
+      class="group flex items-center gap-3 rounded-xl border border-base-300 bg-base-100 p-2 pr-3 transition hover:border-primary/50 hover:shadow-sm"
+    >
+      <.link navigate={~p"/puzzles/#{@p}"} class="flex flex-1 items-center gap-3 min-w-0">
+        <span class="relative shrink-0">
+          <span
+            :if={!Puzzle.pictures?(@p)}
+            class="grid place-items-center size-14 rounded-lg bg-base-200 font-mono text-xs text-base-content/60 overflow-hidden p-1 leading-tight break-all"
+          >
+            {String.slice(@p.input_text, 0, 24)}
+          </span>
+          <img
+            :if={cover = Puzzle.pictures?(@p) && List.first(@p.images)}
+            src={cover.path}
+            alt=""
+            class="size-14 rounded-lg object-cover bg-base-200"
+          />
+          <span
+            :if={length(@p.images) > 1}
+            class="absolute -bottom-1 -right-1 badge badge-xs badge-neutral"
+            title={"#{length(@p.images)} pictures"}
+          >
+            ×{length(@p.images)}
+          </span>
+        </span>
+        <div class="min-w-0 flex-1">
+          <p class="flex items-center gap-1.5 font-medium">
+            <span class="truncate">{@p.title}</span>
+            <.icon
+              :if={@owned and @p.public}
+              name="hero-globe-alt"
+              class="size-4 shrink-0 text-primary"
+            />
+          </p>
+          <p class="text-xs text-base-content/60">
+            <%= if Puzzle.pictures?(@p) do %>
+              {pictures(length(@p.images))} · {@row.glyph_count} glyphs · {@row.symbol_count} symbols
+            <% else %>
+              Text · {String.length(@p.input_text)} characters
+            <% end %>
+          </p>
+          <div
+            :if={Puzzle.pictures?(@p)}
+            class="mt-1 h-1.5 rounded-full bg-base-200 overflow-hidden"
+          >
+            <div
+              class="h-full bg-primary transition-all"
+              style={"width: #{percent(@row.solved_count, @row.symbol_count)}%"}
+            />
+          </div>
+        </div>
+      </.link>
+      <button
+        :if={@owned}
+        type="button"
+        phx-click="delete"
+        phx-value-id={@p.id}
+        data-confirm={"Delete “#{@p.title}”?"}
+        class="btn btn-ghost btn-sm btn-square opacity-0 group-hover:opacity-100 focus:opacity-100"
+        aria-label={"Delete #{@p.title}"}
+      >
+        <.icon name="hero-trash" class="size-4" />
+      </button>
+    </li>
+    """
+  end
+
+  attr :algorithm, :any, required: true
+  attr :owned, :boolean, default: false
+
+  defp algorithm_item(assigns) do
+    ~H"""
+    <li id={if @owned, do: "algorithm-#{@algorithm.id}", else: "public-algorithm-#{@algorithm.id}"}>
+      <.link
+        navigate={~p"/algorithms/#{@algorithm}"}
+        class="flex items-center gap-3 rounded-xl border border-base-300 bg-base-100 p-2 pr-3 transition hover:border-primary/50 hover:shadow-sm"
+      >
+        <span class="grid place-items-center size-10 rounded-lg bg-primary/10 text-primary shrink-0">
+          <.icon name="hero-cog-6-tooth" class="size-5" />
+        </span>
+        <span class="min-w-0">
+          <span class="flex items-center gap-1.5 font-medium">
+            <span class="truncate">{@algorithm.title}</span>
+            <.icon
+              :if={@owned and @algorithm.public}
+              name="hero-globe-alt"
+              class="size-4 shrink-0 text-primary"
+            />
+          </span>
+          <span class="block text-xs text-base-content/60">
+            {algorithm_steps(@algorithm)}
+          </span>
+        </span>
+      </.link>
+    </li>
     """
   end
 

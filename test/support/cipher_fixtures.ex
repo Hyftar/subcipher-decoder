@@ -5,6 +5,9 @@ defmodule Subcipher.CipherFixtures do
   JS detector tests: `node --test assets/test/*.test.mjs`).
   """
 
+  import Subcipher.AccountsFixtures, only: [user_scope_fixture: 0]
+
+  alias Subcipher.Accounts.Scope
   alias Subcipher.Ciphers
   alias Subcipher.Ciphers.Analysis
 
@@ -44,9 +47,23 @@ defmodule Subcipher.CipherFixtures do
     }
   end
 
-  def puzzle_fixture(name \\ "pangram_clean", attrs \\ %{}) do
+  @doc """
+  A pictures puzzle (the pangram by default), owned by `scope`'s user (a
+  new user when not given).
+  """
+  def puzzle_fixture, do: puzzle_fixture(user_scope_fixture(), "pangram_clean", %{})
+  def puzzle_fixture(%Scope{} = scope), do: puzzle_fixture(scope, "pangram_clean", %{})
+
+  def puzzle_fixture(name) when is_binary(name),
+    do: puzzle_fixture(user_scope_fixture(), name, %{})
+
+  def puzzle_fixture(name, attrs) when is_binary(name),
+    do: puzzle_fixture(user_scope_fixture(), name, attrs)
+
+  def puzzle_fixture(%Scope{} = scope, name, attrs) do
     {:ok, puzzle} =
       Ciphers.create_puzzle(
+        scope,
         Map.merge(%{title: "Pangram"}, attrs),
         image_upload(name),
         detected_glyphs(name)

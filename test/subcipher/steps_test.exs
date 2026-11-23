@@ -2,6 +2,7 @@ defmodule Subcipher.StepsTest do
   use Subcipher.DataCase, async: true
 
   import Subcipher.CipherFixtures
+  import Subcipher.AccountsFixtures, only: [user_scope_fixture: 0]
   alias Subcipher.{Ciphers, Steps}
 
   setup do
@@ -83,26 +84,34 @@ defmodule Subcipher.StepsTest do
   end
 
   describe "text puzzles" do
-    test "create_text_puzzle/2 stores the text and a first step of any cipher" do
+    test "create_text_puzzle/3 stores the text and a first step of any cipher" do
+      scope = user_scope_fixture()
+
       assert {:ok, puzzle} =
-               Ciphers.create_text_puzzle(%{title: "Note", input_text: "Uryyb"}, "caesar")
+               Ciphers.create_text_puzzle(scope, %{title: "Note", input_text: "Uryyb"}, "caesar")
 
       assert puzzle.input_kind == "text"
       assert [%{type: "caesar", position: 1}] = puzzle.steps
       assert Steps.source(puzzle) == "Uryyb"
 
       assert {:error, %Ecto.Changeset{}} =
-               Ciphers.create_text_puzzle(%{title: "Note", input_text: ""}, "caesar")
+               Ciphers.create_text_puzzle(scope, %{title: "Note", input_text: ""}, "caesar")
 
       assert {:error, :unknown_cipher} =
-               Ciphers.create_text_puzzle(%{title: "Note", input_text: "x"}, "enigma")
+               Ciphers.create_text_puzzle(scope, %{title: "Note", input_text: "x"}, "enigma")
 
       # Nothing is left behind by failed creations.
-      assert length(Ciphers.list_puzzles()) == 2
+      assert length(Ciphers.list_puzzles(scope)) == 1
     end
 
     test "keep at least one step" do
-      {:ok, puzzle} = Ciphers.create_text_puzzle(%{title: "Note", input_text: "x"}, "caesar")
+      {:ok, puzzle} =
+        Ciphers.create_text_puzzle(
+          user_scope_fixture(),
+          %{title: "Note", input_text: "x"},
+          "caesar"
+        )
+
       [first] = puzzle.steps
       assert {:error, :last_step} = Steps.delete_step(first)
 
@@ -112,7 +121,13 @@ defmodule Subcipher.StepsTest do
     end
 
     test "update_input_text/2" do
-      {:ok, puzzle} = Ciphers.create_text_puzzle(%{title: "Note", input_text: "x"}, "caesar")
+      {:ok, puzzle} =
+        Ciphers.create_text_puzzle(
+          user_scope_fixture(),
+          %{title: "Note", input_text: "x"},
+          "caesar"
+        )
+
       assert {:ok, %{input_text: "Gur"}} = Ciphers.update_input_text(puzzle, "Gur")
     end
   end

@@ -20,12 +20,44 @@ defmodule Subcipher.Algorithms do
   import Ecto.Query, warn: false
 
   alias Subcipher.{Ciphers, Repo, Steps}
+  alias Subcipher.Accounts.Scope
   alias Subcipher.Algorithms.Algorithm
   alias Subcipher.Ciphers.Puzzle
   alias Subcipher.Steps.Step
 
-  def list_algorithms do
-    Repo.all(from a in Algorithm, order_by: [desc: a.inserted_at, desc: a.id])
+  @doc "The algorithms of the scope's user, most recent first (none without a user)."
+  def list_algorithms(nil), do: []
+
+  def list_algorithms(%Scope{user: user}) do
+    Repo.all(
+      from a in Algorithm,
+        where: a.user_id == ^user.id,
+        order_by: [desc: a.inserted_at, desc: a.id]
+    )
+  end
+
+  @doc "The public algorithms of other users, most recent first."
+  def list_public_algorithms(scope) do
+    query = from a in Algorithm, where: a.public, order_by: [desc: a.inserted_at, desc: a.id]
+
+    case scope do
+      %Scope{user: user} -> where(query, [a], a.user_id != ^user.id or is_nil(a.user_id))
+      nil -> query
+    end
+    |> Repo.all()
+  end
+
+  @doc "The algorithm with `id` if the scope may see it (its own, or public), else `nil`."
+  def get_algorithm_for(scope, id) do
+    case get_algorithm(id) do
+      nil -> nil
+      algorithm -> if Scope.can_view?(scope, algorithm), do: algorithm
+    end
+  end
+
+  @doc "Makes an algorithm public (everyone can use it, read-only) or private."
+  def set_public(%Algorithm{} = algorithm, public) when is_boolean(public) do
+    algorithm |> Ecto.Changeset.change(public: public) |> Repo.update()
   end
 
   def get_algorithm!(id), do: Repo.get!(Algorithm, id)
@@ -63,10 +95,10 @@ defmodule Subcipher.Algorithms do
   end
 
   @doc """
-  Creates an algorithm from `puzzle`. Returns `{:ok, algorithm}` or
+  Creates an algorithm from `puzzle`, owned by the scope's user. Returns `{:ok, algorithm}` or
   `{:error, problems}` (see `problems/1`).
   """
-  def create_from_puzzle(%Puzzle{} = puzzle) do
+  def create_from_puzzle(%Scope{user: user}, %Puzzle{} = puzzle) do
     puzzle = Ciphers.get_puzzle!(puzzle.id)
 
     case problems(puzzle) do
@@ -77,6 +109,7 @@ defmodule Subcipher.Algorithms do
           title: puzzle.title,
           input_kind: puzzle.input_kind,
           source_puzzle_id: puzzle.id,
+          user_id: user.id,
           steps: Enum.map(puzzle.steps, &%{"type" => &1.type, "params" => &1.params}),
           symbol_key: symbol_key,
           images: images
@@ -93,11 +126,12 @@ defmodule Subcipher.Algorithms do
 
   @doc """
   Creates a text algorithm from scratch, starting with one step of cipher
-  `type` (default settings), not attached to any puzzle.
+  `type` (default settings), not attached to any puzzle, owned by the scope's
+  user.
   """
-  def create_algorithm(type, title \\ "New algorithm") do
+  def create_algorithm(%Scope{user: user}, type, title \\ "New algorithm") do
     with {:ok, step} <- new_step(type) do
-      Repo.insert(%Algorithm{title: title, input_kind: "text", steps: [step]})
+      Repo.insert(%Algorithm{user_id: user.id, title: title, input_kind: "text", steps: [step]})
     end
   end
 

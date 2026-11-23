@@ -46,7 +46,42 @@ defmodule SubcipherWeb.Layouts do
             cipher workbench
           </span>
         </.link>
-        <.theme_toggle />
+        <div class="flex items-center gap-1 sm:gap-2">
+          <%= if @current_scope do %>
+            <span
+              id="current-user"
+              class="hidden md:inline max-w-56 truncate text-sm text-base-content/60"
+              title={@current_scope.user.email}
+            >
+              {@current_scope.user.email}
+            </span>
+            <.link
+              navigate={~p"/users/settings"}
+              id="user-settings"
+              class="btn btn-ghost btn-sm btn-square"
+              aria-label="Settings"
+              title="Settings"
+            >
+              <.icon name="hero-cog-6-tooth" class="size-5" />
+            </.link>
+            <.link
+              href={~p"/users/log-out"}
+              method="delete"
+              id="log-out"
+              class="btn btn-ghost btn-sm"
+            >
+              Log out
+            </.link>
+          <% else %>
+            <.link navigate={~p"/users/log-in"} id="log-in" class="btn btn-ghost btn-sm">
+              Log in
+            </.link>
+            <.link navigate={~p"/users/register"} id="register" class="btn btn-primary btn-sm">
+              Sign up
+            </.link>
+          <% end %>
+          <.theme_toggle />
+        </div>
       </div>
     </header>
 

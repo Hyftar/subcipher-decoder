@@ -4,6 +4,9 @@ defmodule SubcipherWeb.PuzzleLiveTest do
   import Phoenix.LiveViewTest
   import Subcipher.CipherFixtures
 
+  # Puzzles and algorithms are created for the logged-in user (`scope`).
+  setup :register_and_log_in_user
+
   describe "Index" do
     test "symbol substitution asks for a picture, then creates a puzzle", %{conn: conn} do
       {:ok, view, _} = live(conn, ~p"/")
@@ -70,8 +73,8 @@ defmodule SubcipherWeb.PuzzleLiveTest do
       assert render(view) =~ "No symbols were found"
     end
 
-    test "lists and deletes puzzles", %{conn: conn} do
-      puzzle = puzzle_fixture()
+    test "lists and deletes puzzles", %{conn: conn, scope: scope} do
+      puzzle = puzzle_fixture(scope)
       {:ok, view, html} = live(conn, ~p"/")
       assert html =~ "Pangram"
 
@@ -92,8 +95,8 @@ defmodule SubcipherWeb.PuzzleLiveTest do
   end
 
   describe "Show" do
-    setup do
-      puzzle = puzzle_fixture()
+    setup %{scope: scope} do
+      puzzle = puzzle_fixture(scope)
       %{puzzle: puzzle, solution: solution(puzzle)}
     end
 
@@ -259,8 +262,8 @@ defmodule SubcipherWeb.PuzzleLiveTest do
   end
 
   describe "Show with several pictures" do
-    test "adds a picture whose symbols match the existing ones", %{conn: conn} do
-      puzzle = puzzle_fixture()
+    test "adds a picture whose symbols match the existing ones", %{conn: conn, scope: scope} do
+      puzzle = puzzle_fixture(scope)
       [first | _] = puzzle.glyphs
       {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
 
@@ -295,8 +298,8 @@ defmodule SubcipherWeb.PuzzleLiveTest do
                "T·· ····· ····· ···\n····· ···· T·· ···· ···\n···· ·· ··· ··T· ····\n····· ······ ····\n\nT··"
     end
 
-    test "reorders pictures", %{conn: conn} do
-      puzzle = puzzle_fixture() |> add_image_fixture("pixel_glyphs")
+    test "reorders pictures", %{conn: conn, scope: scope} do
+      puzzle = puzzle_fixture(scope) |> add_image_fixture("pixel_glyphs")
       [first, second] = puzzle.images
       {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
 
@@ -320,8 +323,8 @@ defmodule SubcipherWeb.PuzzleLiveTest do
       assert order.() == [first.id, second.id]
     end
 
-    test "→ continues from one picture into the next", %{conn: conn} do
-      puzzle = puzzle_fixture() |> add_image_fixture("pixel_glyphs")
+    test "→ continues from one picture into the next", %{conn: conn, scope: scope} do
+      puzzle = puzzle_fixture(scope) |> add_image_fixture("pixel_glyphs")
       [first_image, second_image] = puzzle.images
 
       last_of_first =
@@ -335,8 +338,8 @@ defmodule SubcipherWeb.PuzzleLiveTest do
       assert has_element?(view, ~s(#puzzle[data-scroll-to="glyph-#{first_of_second.id}"]))
     end
 
-    test "removes a picture", %{conn: conn} do
-      puzzle = puzzle_fixture() |> add_image_fixture("pixel_glyphs")
+    test "removes a picture", %{conn: conn, scope: scope} do
+      puzzle = puzzle_fixture(scope) |> add_image_fixture("pixel_glyphs")
       [_, second] = puzzle.images
       {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
       assert view |> element("#progress") |> render() =~ "0 / 44"

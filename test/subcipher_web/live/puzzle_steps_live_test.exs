@@ -4,12 +4,15 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
   import Phoenix.LiveViewTest
   import Subcipher.CipherFixtures
 
+  # Puzzles and algorithms are created for the logged-in user (`scope`).
+  setup :register_and_log_in_user
+
   alias Subcipher.{Ciphers, Steps}
 
   # Pictures puzzle whose step 1 deciphers to the pangram encrypted with a
   # Caesar shift of 3.
-  defp shifted_pangram_puzzle do
-    puzzle = puzzle_fixture()
+  defp shifted_pangram_puzzle(scope) do
+    puzzle = puzzle_fixture(scope)
 
     for {symbol_id, <<c>>} <- solution(puzzle) do
       symbol = Enum.find(puzzle.symbols, &(&1.id == symbol_id))
@@ -30,8 +33,8 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
   defp output(view, step), do: view |> element("#step-output-#{step.id}") |> render()
 
   describe "step navigation (pictures puzzle)" do
-    setup do
-      %{puzzle: shifted_pangram_puzzle()}
+    setup %{scope: scope} do
+      %{puzzle: shifted_pangram_puzzle(scope)}
     end
 
     test "step 1 is the symbol substitution of the pictures", %{conn: conn, puzzle: puzzle} do
@@ -156,7 +159,7 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
   end
 
   describe "text puzzles" do
-    test "choosing a text cipher asks for the cipher text", %{conn: conn} do
+    test "choosing a text cipher asks for the cipher text", %{conn: conn, scope: scope} do
       {:ok, view, _} = live(conn, ~p"/")
       view |> element("#new-cipher-caesar") |> render_click()
       assert_patch(view, ~p"/?cipher=caesar")
@@ -173,7 +176,7 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
         |> render_submit()
         |> follow_redirect(conn)
 
-      [%{puzzle: puzzle}] = Ciphers.list_puzzles()
+      [%{puzzle: puzzle}] = Ciphers.list_puzzles(scope)
       [step] = Steps.list_steps(puzzle)
       assert step.type == "caesar"
 
@@ -183,7 +186,7 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
       assert output(view, step) =~ "The quick brown fox"
     end
 
-    test "symbol substitution can also start from text", %{conn: conn} do
+    test "symbol substitution can also start from text", %{conn: conn, scope: scope} do
       {:ok, view, _} = live(conn, ~p"/?cipher=symbol_substitution")
       assert has_element?(view, "#new-puzzle-form")
 
@@ -198,7 +201,7 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
         |> render_submit()
         |> follow_redirect(conn)
 
-      [%{puzzle: puzzle}] = Ciphers.list_puzzles()
+      [%{puzzle: puzzle}] = Ciphers.list_puzzles(scope)
       assert puzzle.input_kind == "text"
       assert [%{type: "symbol_substitution"}] = Steps.list_steps(puzzle)
     end
@@ -213,7 +216,7 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
       assert has_element?(view, "#choose-cipher")
     end
 
-    test "require a text", %{conn: conn} do
+    test "require a text", %{conn: conn, scope: scope} do
       {:ok, view, _} = live(conn, ~p"/?cipher=caesar")
 
       view
@@ -221,12 +224,16 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
       |> render_submit()
 
       assert has_element?(view, "#new-text-puzzle-form", "can't be blank")
-      assert Ciphers.list_puzzles() == []
+      assert Ciphers.list_puzzles(scope) == []
     end
 
-    test "choice settings (select fields) and OSRS usage notes", %{conn: conn} do
+    test "choice settings (select fields) and OSRS usage notes", %{conn: conn, scope: scope} do
       {:ok, puzzle} =
-        Ciphers.create_text_puzzle(%{title: "Names", input_text: "Yenrab Lahsram"}, "reverse")
+        Ciphers.create_text_puzzle(
+          scope,
+          %{title: "Names", input_text: "Yenrab Lahsram"},
+          "reverse"
+        )
 
       [step] = puzzle.steps
       {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
@@ -237,9 +244,9 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
       assert output(view, step) =~ "barneY marshaL"
     end
 
-    test "anagram tiles are reordered, and can be reset", %{conn: conn} do
+    test "anagram tiles are reordered, and can be reset", %{conn: conn, scope: scope} do
       {:ok, puzzle} =
-        Ciphers.create_text_puzzle(%{title: "Clue", input_text: "I CORD"}, "anagram")
+        Ciphers.create_text_puzzle(scope, %{title: "Clue", input_text: "I CORD"}, "anagram")
 
       [step] = puzzle.steps
       {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
@@ -263,9 +270,9 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
       assert output(view, step) =~ "I CORD"
     end
 
-    test "anagram spaces slider: 0 to letters − 1", %{conn: conn} do
+    test "anagram spaces slider: 0 to letters − 1", %{conn: conn, scope: scope} do
       {:ok, puzzle} =
-        Ciphers.create_text_puzzle(%{title: "Clue", input_text: "CARPET AHOY"}, "anagram")
+        Ciphers.create_text_puzzle(scope, %{title: "Clue", input_text: "CARPET AHOY"}, "anagram")
 
       [step] = puzzle.steps
       {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
@@ -285,9 +292,9 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
       assert hd(Steps.list_steps(puzzle)).params["spaces"] == 3
     end
 
-    test "moving tiles keeps the number of spaces", %{conn: conn} do
+    test "moving tiles keeps the number of spaces", %{conn: conn, scope: scope} do
       {:ok, puzzle} =
-        Ciphers.create_text_puzzle(%{title: "Clue", input_text: "CARPET AHOY"}, "anagram")
+        Ciphers.create_text_puzzle(scope, %{title: "Clue", input_text: "CARPET AHOY"}, "anagram")
 
       [step] = puzzle.steps
       {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
@@ -316,18 +323,25 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
       assert view |> element("#anagram-#{step.id} li:first-child") |> render() =~ "C"
     end
 
-    test "steps whose cipher doesn't suggest have no suggestions panel", %{conn: conn} do
+    test "steps whose cipher doesn't suggest have no suggestions panel", %{
+      conn: conn,
+      scope: scope
+    } do
       {:ok, puzzle} =
-        Ciphers.create_text_puzzle(%{title: "Morse", input_text: "... --- ..."}, "morse")
+        Ciphers.create_text_puzzle(scope, %{title: "Morse", input_text: "... --- ..."}, "morse")
 
       [step] = puzzle.steps
       {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
       refute has_element?(view, "#suggestions-#{step.id}")
     end
 
-    test "symbol substitution on text and editing the input", %{conn: conn} do
+    test "symbol substitution on text and editing the input", %{conn: conn, scope: scope} do
       {:ok, puzzle} =
-        Ciphers.create_text_puzzle(%{title: "Stars", input_text: "☀♪Θ ☀"}, "symbol_substitution")
+        Ciphers.create_text_puzzle(
+          scope,
+          %{title: "Stars", input_text: "☀♪Θ ☀"},
+          "symbol_substitution"
+        )
 
       [step] = puzzle.steps
       {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")

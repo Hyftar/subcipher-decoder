@@ -7,6 +7,19 @@
 # General application configuration
 import Config
 
+config :subcipher, :scopes,
+  user: [
+    default: true,
+    module: Subcipher.Accounts.Scope,
+    assign_key: :current_scope,
+    access_path: [:user, :id],
+    schema_key: :user_id,
+    schema_type: :id,
+    schema_table: :users,
+    test_data_fixture: Subcipher.AccountsFixtures,
+    test_setup_helper: :register_and_log_in_user
+  ]
+
 config :subcipher,
   ecto_repos: [Subcipher.Repo],
   generators: [timestamp_type: :utc_datetime]
@@ -21,6 +34,11 @@ config :subcipher, SubcipherWeb.Endpoint,
   ],
   pubsub_server: Subcipher.PubSub,
   live_view: [signing_salt: "nPsPfE0D"]
+
+# Emails are kept in memory unless SMTP is configured (config/runtime.exs).
+config :subcipher, Subcipher.Mailer, adapter: Swoosh.Adapters.Local
+# The SMTP adapter needs no HTTP client.
+config :swoosh, :api_client, false
 
 # Configure LiveView
 config :phoenix_live_view,

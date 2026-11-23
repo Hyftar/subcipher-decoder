@@ -4,11 +4,14 @@ defmodule SubcipherWeb.PuzzleSolverLiveTest do
   import Phoenix.LiveViewTest
   import Subcipher.CipherFixtures
 
+  # Puzzles and algorithms are created for the logged-in user (`scope`).
+  setup :register_and_log_in_user
+
   alias Subcipher.Ciphers
 
   describe "picture step suggestions" do
-    test "frequency match fills the symbols without a letter", %{conn: conn} do
-      puzzle = puzzle_fixture()
+    test "frequency match fills the symbols without a letter", %{conn: conn, scope: scope} do
+      puzzle = puzzle_fixture(scope)
       {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
 
       assert has_element?(view, "#suggestions-symbols")
@@ -21,8 +24,8 @@ defmodule SubcipherWeb.PuzzleSolverLiveTest do
       refute has_element?(view, "#suggestion-symbols-0")
     end
 
-    test "Try to solve runs in the background, then can be applied", %{conn: conn} do
-      puzzle = puzzle_fixture()
+    test "Try to solve runs in the background, then can be applied", %{conn: conn, scope: scope} do
+      puzzle = puzzle_fixture(scope)
       {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
 
       view |> element("#solve-symbols") |> render_click()
@@ -40,9 +43,10 @@ defmodule SubcipherWeb.PuzzleSolverLiveTest do
     end
   end
 
-  test "text steps with a solver get Try to solve", %{conn: conn} do
+  test "text steps with a solver get Try to solve", %{conn: conn, scope: scope} do
     {:ok, puzzle} =
       Ciphers.create_text_puzzle(
+        scope,
         %{title: "Stars", input_text: "☀♪Θ ♠Φ☎Θ ☀♪Θ ★♣♥ ♦☂✈ ☀♪Θ ⚓☯⚑ ✿☘⌘"},
         "symbol_substitution"
       )

@@ -2,6 +2,7 @@ defmodule Subcipher.CiphersTest do
   use Subcipher.DataCase, async: true
 
   import Subcipher.CipherFixtures
+  import Subcipher.AccountsFixtures, only: [user_scope_fixture: 0]
   alias Subcipher.Ciphers
 
   describe "create_puzzle/4" do
@@ -19,7 +20,12 @@ defmodule Subcipher.CiphersTest do
       image = %{path: fixture_path("pangram_clean.png"), ext: ".png", width: 10, height: 10}
 
       assert {:error, %Ecto.Changeset{}} =
-               Ciphers.create_puzzle(%{title: "  "}, image, detected_glyphs())
+               Ciphers.create_puzzle(
+                 user_scope_fixture(),
+                 %{title: "  "},
+                 image,
+                 detected_glyphs()
+               )
     end
   end
 
@@ -175,15 +181,18 @@ defmodule Subcipher.CiphersTest do
     assert Ciphers.plaintext(again) == pangram_text()
   end
 
-  test "list_puzzles/0 and delete_puzzle/1" do
-    puzzle = puzzle_fixture()
-    [%{symbol_count: 26, solved_count: 0, glyph_count: count}] = Ciphers.list_puzzles()
+  test "list_puzzles/1 and delete_puzzle/1" do
+    scope = user_scope_fixture()
+    puzzle = puzzle_fixture(scope)
+    [%{symbol_count: 26, solved_count: 0, glyph_count: count}] = Ciphers.list_puzzles(scope)
+    assert Ciphers.list_puzzles(user_scope_fixture()) == []
+    assert Ciphers.list_puzzles(nil) == []
     assert count == length(pangram_letters())
 
     file = Path.join(Ciphers.uploads_dir(), Path.basename(hd(puzzle.images).path))
     assert {:ok, _} = Ciphers.delete_puzzle(puzzle)
     refute File.exists?(file)
-    assert Ciphers.list_puzzles() == []
+    assert Ciphers.list_puzzles(scope) == []
   end
 
   describe "multiple pictures" do

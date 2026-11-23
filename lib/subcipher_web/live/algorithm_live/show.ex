@@ -6,21 +6,23 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
   use SubcipherWeb, :live_view
 
   alias Subcipher.{Algorithms, Steps}
+  alias Subcipher.Accounts.Scope
   alias Subcipher.Algorithms.Algorithm
   alias Subcipher.Steps.Step
 
   import SubcipherWeb.StepComponents, only: [output: 1, param_field: 1, cipher_grid: 1]
+  import SubcipherWeb.VisibilityComponents, only: [visibility_toggle: 1]
 
   # Height (px) of the symbols drawn from the symbol key.
   @symbol_height 36
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
-    case Algorithms.get_algorithm(id) do
+    case Algorithms.get_algorithm_for(socket.assigns.current_scope, id) do
       nil ->
         {:ok,
          socket
-         |> put_flash(:error, "This algorithm doesn't exist anymore.")
+         |> put_flash(:error, "This algorithm doesn't exist, or it is private.")
          |> push_navigate(to: ~p"/")}
 
       algorithm ->
@@ -30,6 +32,8 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
 
   defp init(socket, algorithm) do
     socket
+    # Only the owner edits it; others use a public algorithm as it is.
+    |> assign(:owner?, Scope.owner?(socket.assigns.current_scope, algorithm))
     |> assign(:page_title, algorithm.title)
     |> assign(:algorithm, algorithm)
     |> assign(:steps, describe_steps(algorithm))
@@ -59,7 +63,7 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
   def handle_params(params, _uri, socket) do
     mode = if params["mode"] in ~w(encode decode), do: params["mode"], else: "encode"
     # ?edit=true opens the editor (a new algorithm starts there).
-    editing = socket.assigns.editing or params["edit"] == "true"
+    editing = socket.assigns.owner? and (socket.assigns.editing or params["edit"] == "true")
 
     {:noreply, socket |> assign(:mode, mode) |> assign(:editing, editing) |> assign_trace()}
   end
@@ -181,7 +185,20 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
     assign(socket, :trace, trace)
   end
 
+  # Changing the algorithm is for its owner; anyone who can see it can use it.
+  @owner_events ~w(toggle_edit rename add_step change_step_type update_step move_step delete_step delete toggle_public)
+
   @impl true
+  def handle_event(event, _params, %{assigns: %{owner?: false}} = socket)
+      when event in @owner_events,
+      do: {:noreply, put_flash(socket, :error, "This algorithm belongs to someone else.")}
+
+  def handle_event("toggle_public", _params, socket) do
+    algorithm = socket.assigns.algorithm
+    {:ok, algorithm} = Algorithms.set_public(algorithm, !algorithm.public)
+    {:noreply, assign(socket, :algorithm, algorithm)}
+  end
+
   def handle_event("input", %{"text" => text}, socket) do
     {:noreply,
      socket
@@ -326,7 +343,7 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash}>
+    <Layouts.app flash={@flash} current_scope={@current_scope}>
       <div id="algorithm" class="space-y-6">
         <div class="flex flex-wrap items-center gap-3">
           <.link navigate={~p"/"} class="btn btn-ghost btn-sm btn-square" aria-label="Back">
@@ -355,14 +372,16 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
             <h1 :if={!@editing} class="text-2xl font-bold tracking-tight">{@algorithm.title}</h1>
           </div>
           <.link
-            :if={@algorithm.source_puzzle_id}
+            :if={@owner? and @algorithm.source_puzzle_id}
             navigate={~p"/puzzles/#{@algorithm.source_puzzle_id}"}
             class="btn btn-ghost btn-sm"
             id="source-puzzle"
           >
             <.icon name="hero-puzzle-piece" class="size-4" /> Puzzle
           </.link>
+          <.visibility_toggle :if={@owner?} public={@algorithm.public} />
           <button
+            :if={@owner?}
             type="button"
             id="delete-algorithm"
             class="btn btn-ghost btn-sm"
@@ -386,6 +405,7 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
           <h2 class="flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wider text-base-content/50">
             Steps
             <button
+              :if={@owner?}
               type="button"
               id="edit-algorithm"
               class="btn btn-ghost btn-xs normal-case tracking-normal"

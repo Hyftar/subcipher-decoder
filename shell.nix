@@ -39,6 +39,11 @@ pkgs.mkShell {
     # (the app connects to localhost).
     export DOCKER_CONTEXT=default
 
+    # Emails go to MailDev (docker compose), browsable on http://localhost:1080.
+    export SMTP_HOST="''${SMTP_HOST:-localhost}"
+    export SMTP_PORT="''${SMTP_PORT:-''${MAILDEV_SMTP_PORT:-1025}}"
+    export SMTP_TLS="''${SMTP_TLS:-never}"
+
     export LANG=C.UTF-8
   '';
 }

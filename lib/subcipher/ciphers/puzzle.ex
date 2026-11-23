@@ -17,6 +17,11 @@ defmodule Subcipher.Ciphers.Puzzle do
     has_many :glyphs, Subcipher.Ciphers.Glyph
     has_many :steps, Subcipher.Steps.Step
 
+    # Who owns it (set by the context, never cast), and whether everyone can
+    # see it (read-only) or only its owner.
+    belongs_to :user, Subcipher.Accounts.User
+    field :public, :boolean, default: false
+
     timestamps(type: :utc_datetime)
   end
 

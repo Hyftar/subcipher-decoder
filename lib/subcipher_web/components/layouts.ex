@@ -58,25 +58,25 @@ defmodule SubcipherWeb.Layouts do
             <.link
               navigate={~p"/users/settings"}
               id="user-settings"
-              class="btn btn-ghost btn-sm btn-square"
+              class="btn btn-ghost btn-square"
               aria-label="Settings"
               title="Settings"
             >
-              <.icon name="hero-cog-6-tooth" class="size-5" />
+              <.icon name="hero-cog-6-tooth" class="size-6" />
             </.link>
             <.link
               href={~p"/users/log-out"}
               method="delete"
               id="log-out"
-              class="btn btn-ghost btn-sm"
+              class="btn btn-ghost"
             >
               Log out
             </.link>
           <% else %>
-            <.link navigate={~p"/users/log-in"} id="log-in" class="btn btn-ghost btn-sm">
+            <.link navigate={~p"/users/log-in"} id="log-in" class="btn btn-ghost">
               Log in
             </.link>
-            <.link navigate={~p"/users/register"} id="register" class="btn btn-primary btn-sm">
+            <.link navigate={~p"/users/register"} id="register" class="btn btn-primary">
               Sign up
             </.link>
           <% end %>

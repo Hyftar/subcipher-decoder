@@ -52,6 +52,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
     # Solver results by {target, input key}, and the one being computed.
     |> assign(:solutions, %{})
     |> assign(:solving, nil)
+    |> assign(:shown_suggestions, MapSet.new())
     |> assign(:english_frequency, @english_frequency)
     |> load(puzzle)
   end
@@ -562,6 +563,17 @@ defmodule SubcipherWeb.PuzzleLive.Show do
     end
   end
 
+  def handle_event("toggle_suggestions", %{"panel" => panel}, socket) do
+    panel = to_string(panel)
+
+    {:noreply,
+     update(socket, :shown_suggestions, fn shown ->
+       if MapSet.member?(shown, panel),
+         do: MapSet.delete(shown, panel),
+         else: MapSet.put(shown, panel)
+     end)}
+  end
+
   def handle_event("apply_suggestion", %{"id" => id, "params" => params}, socket) do
     case find_step(socket, id) do
       nil -> {:noreply, socket}
@@ -864,8 +876,8 @@ defmodule SubcipherWeb.PuzzleLive.Show do
     <Layouts.app flash={@flash} current_scope={@current_scope}>
       <div id="puzzle-page" class="space-y-6">
         <div class="flex flex-wrap items-center gap-3">
-          <.link navigate={~p"/"} class="btn btn-ghost btn-sm btn-square" aria-label="Back">
-            <.icon name="hero-arrow-left" class="size-5" />
+          <.link navigate={~p"/"} class="btn btn-ghost btn-square" aria-label="Back">
+            <.icon name="hero-arrow-left" class="size-6" />
           </.link>
           <%= if @owner? do %>
             <.form
@@ -897,11 +909,11 @@ defmodule SubcipherWeb.PuzzleLive.Show do
             :if={@owner?}
             type="button"
             id="make-algorithm"
-            class="btn btn-sm btn-soft btn-primary"
+            class="btn btn-soft btn-primary"
             phx-click="make_algorithm"
             title="Copy these steps into an algorithm to encode and decode any text"
           >
-            <.icon name="hero-cog-6-tooth" class="size-4" /> Make an algorithm
+            <.icon name="hero-cog-6-tooth" class="size-5" /> Make an algorithm
           </button>
         </div>
 
@@ -927,6 +939,9 @@ defmodule SubcipherWeb.PuzzleLive.Show do
               result={@current_entry.result}
               form={@current_entry.form}
               suggestions={@current_entry.suggestions}
+              suggestions_shown={
+                MapSet.member?(@shown_suggestions, to_string(@current_entry.result.step.id))
+              }
               solver_state={
                 if Steps.implements?(@current_entry.result.cipher, :solve, 2),
                   do: solver_state(assigns, @current_entry.solve_key)
@@ -957,6 +972,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
               tolerance={@tolerance}
               english_frequency={@english_frequency}
               symbol_suggestions={@symbol_suggestions}
+              suggestions_shown={MapSet.member?(@shown_suggestions, "symbols")}
               symbol_solver={
                 %{
                   state: symbols_solver_state(assigns),
@@ -1007,6 +1023,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
   attr :english_frequency, :string, required: true
   attr :symbol_suggestions, :list, required: true
   attr :symbol_solver, :map, required: true
+  attr :suggestions_shown, :boolean, required: true
 
   # Step 1 of a pictures puzzle: the symbols of the pictures, substituted by
   # hand, with the symbol key.
@@ -1098,6 +1115,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
               id="symbols"
               suggestions={@symbol_suggestions}
               solver={@symbol_solver}
+              shown={@suggestions_shown}
             />
           </section>
 
@@ -1134,12 +1152,12 @@ defmodule SubcipherWeb.PuzzleLive.Show do
                     />
                     <button
                       type="button"
-                      class="btn btn-ghost btn-xs normal-case tracking-normal font-normal"
+                      class="btn btn-ghost btn-sm normal-case tracking-normal font-normal"
                       phx-click="delete_image"
                       phx-value-id={section.image.id}
                       data-confirm="Remove this picture? Symbols that only appear in it are removed too."
                     >
-                      <.icon name="hero-trash" class="size-4" /> Remove
+                      <.icon name="hero-trash" class="size-5" /> Remove
                     </button>
                   </span>
                 </figcaption>
@@ -1192,7 +1210,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
                 </label>
                 <button
                   type="submit"
-                  class="btn btn-sm"
+                  class="btn"
                   data-confirm="Regroup all symbols? Letters are kept when all glyphs of a new group agree."
                 >
                   Regroup symbols
@@ -1253,7 +1271,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
       <button
         type="button"
         id={"#{@id_prefix}move-up-#{@section.image.id}"}
-        class="btn btn-ghost btn-xs btn-square"
+        class="btn btn-ghost btn-sm btn-square"
         phx-click="move_image"
         phx-value-id={@section.image.id}
         phx-value-direction="up"
@@ -1261,12 +1279,12 @@ defmodule SubcipherWeb.PuzzleLive.Show do
         aria-label={"Move picture #{@section.index} up"}
         title="Move up"
       >
-        <.icon name="hero-arrow-up" class="size-4" />
+        <.icon name="hero-arrow-up" class="size-5" />
       </button>
       <button
         type="button"
         id={"#{@id_prefix}move-down-#{@section.image.id}"}
-        class="btn btn-ghost btn-xs btn-square"
+        class="btn btn-ghost btn-sm btn-square"
         phx-click="move_image"
         phx-value-id={@section.image.id}
         phx-value-direction="down"
@@ -1274,7 +1292,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
         aria-label={"Move picture #{@section.index} down"}
         title="Move down"
       >
-        <.icon name="hero-arrow-down" class="size-4" />
+        <.icon name="hero-arrow-down" class="size-5" />
       </button>
     </span>
     """
@@ -1333,20 +1351,20 @@ defmodule SubcipherWeb.PuzzleLive.Show do
       </div>
       <div class="flex flex-wrap gap-2">
         <%= if @merging do %>
-          <button type="button" class="btn btn-sm" phx-click="cancel_merge">Cancel</button>
+          <button type="button" class="btn" phx-click="cancel_merge">Cancel</button>
         <% else %>
           <button
             type="button"
-            class={["btn btn-sm", @show_glyphs && "btn-active"]}
+            class={["btn", @show_glyphs && "btn-active"]}
             phx-click="toggle_glyphs"
             id="glyphs-button"
             aria-expanded={to_string(@show_glyphs)}
             title="Its occurrences: choose the one shown, trim a crop"
           >
-            <.icon name="hero-squares-2x2" class="size-4" /> Glyphs
+            <.icon name="hero-squares-2x2" class="size-5" /> Glyphs
           </button>
-          <button type="button" class="btn btn-sm" phx-click="start_merge" id="merge-button">
-            <.icon name="hero-arrows-pointing-in" class="size-4" /> Merge…
+          <button type="button" class="btn" phx-click="start_merge" id="merge-button">
+            <.icon name="hero-arrows-pointing-in" class="size-5" /> Merge…
           </button>
           <button
             :if={@glyph_id && @entry.count > 1}
@@ -1360,12 +1378,12 @@ defmodule SubcipherWeb.PuzzleLive.Show do
           </button>
           <button
             type="button"
-            class="btn btn-sm"
+            class="btn"
             phx-click="toggle_ignore"
             phx-value-id={@symbol.id}
             title="Hide noise or decorations from the text"
           >
-            <.icon name={if @symbol.ignored, do: "hero-eye", else: "hero-eye-slash"} class="size-4" />
+            <.icon name={if @symbol.ignored, do: "hero-eye", else: "hero-eye-slash"} class="size-5" />
             {if @symbol.ignored, do: "Restore", else: "Ignore"}
           </button>
         <% end %>
@@ -1443,7 +1461,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
               :for={{view, label} <- [{"original", "Original"}, {"mask", "Black & white"}]}
               type="button"
               id={"view-#{view}"}
-              class={["btn btn-xs join-item", @view == view && "btn-primary"]}
+              class={["btn btn-sm join-item", @view == view && "btn-primary"]}
               phx-click="glyph_view"
               phx-value-view={view}
               aria-pressed={to_string(@view == view)}
@@ -1477,22 +1495,22 @@ defmodule SubcipherWeb.PuzzleLive.Show do
             <button
               type="button"
               id="set-sample"
-              class="btn btn-xs"
+              class="btn btn-sm"
               phx-click="set_sample"
               phx-value-id={@glyph.id}
             >
-              <.icon name="hero-star" class="size-4" /> Use as sample
+              <.icon name="hero-star" class="size-5" /> Use as sample
             </button>
           <% end %>
           <button
             :if={@glyph.detected_box}
             type="button"
             id="reset-trim"
-            class="btn btn-xs btn-ghost"
+            class="btn btn-sm btn-ghost"
             phx-click="reset_trim"
             phx-value-id={@glyph.id}
           >
-            <.icon name="hero-arrow-uturn-left" class="size-4" /> Reset crop
+            <.icon name="hero-arrow-uturn-left" class="size-5" /> Reset crop
           </button>
         </div>
       </div>
@@ -1565,11 +1583,11 @@ defmodule SubcipherWeb.PuzzleLive.Show do
         <h2 class="font-semibold">Symbol key</h2>
         <button
           type="button"
-          class="btn btn-ghost btn-xs"
+          class="btn btn-ghost btn-sm"
           phx-click="reset_letters"
           data-confirm="Clear every letter?"
         >
-          <.icon name="hero-arrow-path" class="size-4" /> Reset
+          <.icon name="hero-arrow-path" class="size-5" /> Reset
         </button>
       </div>
       <p class="text-xs text-base-content/60">

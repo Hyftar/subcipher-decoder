@@ -24,11 +24,11 @@ defmodule SubcipherWeb.VisibilityComponents do
           else: "Private: only you can see it. Click to make it public."
       }
       class={[
-        "btn btn-sm gap-1.5 transition-colors",
+        "btn gap-1.5 transition-colors",
         if(@public, do: "btn-soft btn-success", else: "btn-ghost")
       ]}
     >
-      <.icon name={if @public, do: "hero-globe-alt", else: "hero-lock-closed"} class="size-4" />
+      <.icon name={if @public, do: "hero-globe-alt", else: "hero-lock-closed"} class="size-5" />
       {if @public, do: "Public", else: "Private"}
     </button>
     """

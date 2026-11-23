@@ -156,6 +156,10 @@ defmodule SubcipherWeb.StepComponents do
     default: nil,
     doc: "Subcipher.Steps.suggestions/3: a list, or nil when the cipher doesn't suggest"
 
+  attr :suggestions_shown, :boolean,
+    default: false,
+    doc: "whether the suggestions were asked for (they may spoil the puzzle)"
+
   attr :can_move_up, :boolean, required: true
   attr :can_move_down, :boolean, required: true
   attr :can_delete, :boolean, required: true
@@ -206,7 +210,7 @@ defmodule SubcipherWeb.StepComponents do
           <button
             type="button"
             id={"move-step-up-#{@step.id}"}
-            class="btn btn-ghost btn-sm btn-square"
+            class="btn btn-ghost btn-square"
             phx-click="move_step"
             phx-value-id={@step.id}
             phx-value-direction="up"
@@ -214,12 +218,12 @@ defmodule SubcipherWeb.StepComponents do
             aria-label="Move step earlier"
             title="Move earlier"
           >
-            <.icon name="hero-arrow-left" class="size-4" />
+            <.icon name="hero-arrow-left" class="size-5" />
           </button>
           <button
             type="button"
             id={"move-step-down-#{@step.id}"}
-            class="btn btn-ghost btn-sm btn-square"
+            class="btn btn-ghost btn-square"
             phx-click="move_step"
             phx-value-id={@step.id}
             phx-value-direction="down"
@@ -227,12 +231,12 @@ defmodule SubcipherWeb.StepComponents do
             aria-label="Move step later"
             title="Move later"
           >
-            <.icon name="hero-arrow-right" class="size-4" />
+            <.icon name="hero-arrow-right" class="size-5" />
           </button>
           <button
             type="button"
             id={"delete-step-#{@step.id}"}
-            class="btn btn-ghost btn-sm btn-square"
+            class="btn btn-ghost btn-square"
             phx-click="delete_step"
             phx-value-id={@step.id}
             disabled={!@can_delete}
@@ -240,7 +244,7 @@ defmodule SubcipherWeb.StepComponents do
             aria-label="Remove step"
             title={if @can_delete, do: "Remove step", else: "A text cipher needs at least one step"}
           >
-            <.icon name="hero-trash" class="size-4" />
+            <.icon name="hero-trash" class="size-5" />
           </button>
         </div>
       </div>
@@ -308,6 +312,7 @@ defmodule SubcipherWeb.StepComponents do
       <.suggestions_panel
         :if={@suggestions || @solver_state}
         id={to_string(@step.id)}
+        shown={@suggestions_shown}
         suggestions={Enum.map(@suggestions || [], &Map.put(&1, :use, use_params(@step, &1)))}
         solver={
           @solver_state &&
@@ -345,23 +350,43 @@ defmodule SubcipherWeb.StepComponents do
     doc:
       "%{state: :idle | :running | {:ok, suggestion} | {:error, message}, start: %JS{}}; nil without solver"
 
+  attr :shown, :boolean,
+    default: false,
+    doc: "the suggestions are hidden until asked for (\"toggle_suggestions\" with `panel: id`)"
+
   @doc """
   Suggested settings, each with the reason it was suggested and a preview
-  of the result; "Use" applies one. With a `solver`, a "Try to solve" card
-  runs it (in the background) and shows its result like a suggestion.
+  of the result; "Use" applies one. They often give the answer away, so they
+  stay hidden until asked for. With a `solver`, a "Try to solve" card runs it
+  (in the background, on demand) and shows its result like a suggestion.
   """
   def suggestions_panel(assigns) do
     ~H"""
-    <div id={"suggestions-#{@id}"} class="space-y-2 min-w-0">
-      <h3 class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-base-content/50">
-        <.icon name="hero-sparkles" class="size-4" /> Suggestions
-      </h3>
-      <p :if={@suggestions == [] and !@solver} class="text-sm text-base-content/60">
+    <div id={"suggestions-#{@id}"} class="space-y-3 min-w-0">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h3 class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-base-content/50">
+          <.icon name="hero-sparkles" class="size-5" /> Suggestions
+        </h3>
+        <button
+          type="button"
+          id={"toggle-suggestions-#{@id}"}
+          class={["btn btn-sm", if(@shown, do: "btn-ghost", else: "btn-soft btn-primary")]}
+          phx-click={JS.push("toggle_suggestions", value: %{panel: @id})}
+          aria-expanded={to_string(@shown)}
+        >
+          <.icon name={if @shown, do: "hero-eye-slash", else: "hero-eye"} class="size-5" />
+          {if @shown, do: "Hide suggestions", else: "Show suggestions"}
+        </button>
+      </div>
+      <p :if={!@shown} class="text-sm text-base-content/60">
+        Hidden so they don't spoil the puzzle.
+      </p>
+      <p :if={@shown and @suggestions == [] and !@solver} class="text-sm text-base-content/60">
         No suggestions for this input (it may be too short to analyse).
       </p>
       <ol class="grid grid-cols-[minmax(0,1fr)] gap-2">
         <.suggestion_card
-          :for={{suggestion, i} <- Enum.with_index(@suggestions)}
+          :for={{suggestion, i} <- if(@shown, do: Enum.with_index(@suggestions), else: [])}
           id={"suggestion-#{@id}-#{i}"}
           use_id={"apply-suggestion-#{@id}-#{i}"}
           suggestion={suggestion}
@@ -373,7 +398,7 @@ defmodule SubcipherWeb.StepComponents do
         >
           <div class="flex flex-wrap items-center gap-2">
             <span class="font-semibold text-sm flex items-center gap-1.5">
-              <.icon name="hero-cpu-chip" class="size-4" /> Try to solve
+              <.icon name="hero-cpu-chip" class="size-5" /> Try to solve
             </span>
             <span
               :if={@solver.state == :running}
@@ -385,7 +410,7 @@ defmodule SubcipherWeb.StepComponents do
               :if={@solver.state != :running}
               type="button"
               id={"solve-#{@id}"}
-              class="btn btn-primary btn-xs ml-auto"
+              class="btn btn-primary btn-sm ml-auto"
               phx-click={@solver.start}
             >
               {if @solver.state == :idle, do: "Solve", else: "Solve again"}
@@ -436,7 +461,7 @@ defmodule SubcipherWeb.StepComponents do
           :if={!@suggestion.applied}
           type="button"
           id={@use_id}
-          class="btn btn-primary btn-soft btn-xs ml-auto"
+          class="btn btn-primary btn-soft btn-sm ml-auto"
           phx-click={@suggestion.use}
         >
           Use
@@ -581,10 +606,10 @@ defmodule SubcipherWeb.StepComponents do
         <button
           type="button"
           id={"anagram-reset-#{@step_id}"}
-          class="btn btn-ghost btn-xs"
+          class="btn btn-ghost btn-sm"
           phx-click={JS.push("update_step", value: %{step_id: @step_id, step: %{order: ""}})}
         >
-          <.icon name="hero-arrow-uturn-left" class="size-3.5" /> Reset
+          <.icon name="hero-arrow-uturn-left" class="size-4" /> Reset
         </button>
       </div>
       <.field_errors form_field={@form_field} />
@@ -720,17 +745,19 @@ defmodule SubcipherWeb.StepComponents do
     ~H"""
     <div class={["relative group rounded-lg bg-base-200/50", @class]}>
       <button
+        :if={String.trim(@text) != ""}
         type="button"
-        class="absolute top-1.5 right-1.5 btn btn-ghost btn-xs opacity-60 group-hover:opacity-100"
+        id={"#{@id}-copy"}
+        class="absolute top-2 right-2 btn btn-ghost btn-sm btn-square opacity-60 group-hover:opacity-100"
         phx-click={JS.dispatch("phx:copy", to: "##{@id}")}
         aria-label="Copy"
         title="Copy"
       >
-        <.icon name="hero-clipboard" class="size-4" />
+        <.icon name="hero-clipboard" class="size-5" />
       </button>
       <pre
         id={@id}
-        class="p-3 pr-10 font-mono text-lg whitespace-pre-wrap break-words leading-relaxed tracking-wider"
+        class="min-h-12 p-3 pr-12 font-mono text-lg whitespace-pre-wrap break-words leading-relaxed tracking-wider"
       >{@text}</pre>
     </div>
     """

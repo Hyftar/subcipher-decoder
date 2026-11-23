@@ -143,7 +143,7 @@ defmodule SubcipherWeb.PuzzleLive.Index do
             </div>
             <div class="flex flex-wrap gap-2">
               <.link navigate={~p"/users/register"} class="btn btn-primary">
-                Sign up <.icon name="hero-arrow-right" class="size-4" />
+                Sign up <.icon name="hero-arrow-right" class="size-5" />
               </.link>
               <.link navigate={~p"/users/log-in"} class="btn btn-ghost">Log in</.link>
             </div>
@@ -161,8 +161,8 @@ defmodule SubcipherWeb.PuzzleLive.Index do
                 <p class="text-sm text-base-content/60">{@cipher.description()}</p>
                 <.osrs_usage cipher={@cipher} />
               </div>
-              <.link patch={~p"/"} id="change-cipher" class="btn btn-ghost btn-sm shrink-0">
-                <.icon name="hero-arrow-path-rounded-square" class="size-4" /> Change
+              <.link patch={~p"/"} id="change-cipher" class="btn btn-ghost shrink-0">
+                <.icon name="hero-arrow-path-rounded-square" class="size-5" /> Change
               </.link>
             </div>
 
@@ -232,11 +232,11 @@ defmodule SubcipherWeb.PuzzleLive.Index do
               <button
                 type="button"
                 id="new-algorithm"
-                class={["btn btn-sm", if(@new_algorithm, do: "btn-active", else: "btn-ghost")]}
+                class={["btn", if(@new_algorithm, do: "btn-active", else: "btn-ghost")]}
                 phx-click="toggle_new_algorithm"
                 aria-expanded={to_string(@new_algorithm)}
               >
-                <.icon name="hero-plus" class="size-4" /> New
+                <.icon name="hero-plus" class="size-5" /> New
               </button>
             </div>
             <div :if={@new_algorithm} id="new-algorithm-panel" class="space-y-2">
@@ -347,10 +347,10 @@ defmodule SubcipherWeb.PuzzleLive.Index do
         phx-click="delete"
         phx-value-id={@p.id}
         data-confirm={"Delete “#{@p.title}”?"}
-        class="btn btn-ghost btn-sm btn-square opacity-0 group-hover:opacity-100 focus:opacity-100"
+        class="btn btn-ghost btn-square opacity-0 group-hover:opacity-100 focus:opacity-100"
         aria-label={"Delete #{@p.title}"}
       >
-        <.icon name="hero-trash" class="size-4" />
+        <.icon name="hero-trash" class="size-5" />
       </button>
     </li>
     """

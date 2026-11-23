@@ -45,7 +45,8 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
     |> assign(:texts, %{"encode" => "", "decode" => ""})
     # Pictures, decode: the symbols composed with the keyboard.
     |> assign(:symbols, [])
-    # Pictures, encode: the composed image's options. Its style is "original"
+    # Pictures: the options of the symbol image (encoded output, or the
+    # cipher symbols when decoding). Its style is "original"
     # (the crops as they are) or "mask" (their black and white pass, in the
     # ink colour); colours are "auto" (detected in the glyphs, reported by
     # the SymbolImage hook) or chosen by hand.
@@ -346,8 +347,8 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
     <Layouts.app flash={@flash} current_scope={@current_scope}>
       <div id="algorithm" class="space-y-6">
         <div class="flex flex-wrap items-center gap-3">
-          <.link navigate={~p"/"} class="btn btn-ghost btn-sm btn-square" aria-label="Back">
-            <.icon name="hero-arrow-left" class="size-5" />
+          <.link navigate={~p"/"} class="btn btn-ghost btn-square" aria-label="Back">
+            <.icon name="hero-arrow-left" class="size-6" />
           </.link>
           <div class="flex-1 min-w-48">
             <p class="text-xs font-semibold uppercase tracking-wider text-primary">Algorithm</p>
@@ -374,21 +375,21 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
           <.link
             :if={@owner? and @algorithm.source_puzzle_id}
             navigate={~p"/puzzles/#{@algorithm.source_puzzle_id}"}
-            class="btn btn-ghost btn-sm"
+            class="btn btn-ghost"
             id="source-puzzle"
           >
-            <.icon name="hero-puzzle-piece" class="size-4" /> Puzzle
+            <.icon name="hero-puzzle-piece" class="size-5" /> Puzzle
           </.link>
           <.visibility_toggle :if={@owner?} public={@algorithm.public} />
           <button
             :if={@owner?}
             type="button"
             id="delete-algorithm"
-            class="btn btn-ghost btn-sm"
+            class="btn btn-ghost"
             phx-click="delete"
             data-confirm="Delete this algorithm?"
           >
-            <.icon name="hero-trash" class="size-4" /> Delete
+            <.icon name="hero-trash" class="size-5" /> Delete
           </button>
         </div>
 
@@ -408,10 +409,10 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
               :if={@owner?}
               type="button"
               id="edit-algorithm"
-              class="btn btn-ghost btn-xs normal-case tracking-normal"
+              class="btn btn-ghost btn-sm normal-case tracking-normal"
               phx-click="toggle_edit"
             >
-              <.icon name="hero-pencil-square" class="size-4" /> Edit
+              <.icon name="hero-pencil-square" class="size-5" /> Edit
             </button>
           </h2>
           <ol class="flex flex-wrap items-stretch gap-2">
@@ -459,14 +460,14 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
             id={"mode-#{mode}"}
             aria-selected={to_string(@mode == mode)}
             class={[
-              "flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition",
+              "flex items-center gap-2 rounded-lg px-5 py-2 font-medium transition",
               if(@mode == mode,
                 do: "bg-base-100 shadow-sm",
                 else: "text-base-content/60 hover:text-base-content"
               )
             ]}
           >
-            <.icon name={icon} class="size-4" /> {label}
+            <.icon name={icon} class="size-5" /> {label}
           </.link>
         </div>
 
@@ -517,18 +518,21 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
                   {stage.label}
                 </p>
                 <%= cond do %>
-                  <% stage.kind == :symbols and @mode == "encode" -> %>
+                  <% stage.kind == :symbols and not drawable?(stage.value) -> %>
+                    <p id="symbol-image-empty" class="text-sm text-base-content/50">
+                      {if @mode == "encode",
+                        do: "Type a message to see it written in symbols.",
+                        else: "Click the symbols of the key to write the cipher text."}
+                    </p>
+                  <% stage.kind == :symbols -> %>
                     <.symbol_image
                       algorithm={@algorithm}
                       tokens={stage.value}
                       options={@image}
                       detected={@detected}
-                    />
-                  <% stage.kind == :symbols -> %>
-                    <.symbols_view
-                      algorithm={@algorithm}
-                      tokens={stage.value}
-                      id={"stage-symbols-#{i}"}
+                      filename={
+                        "#{@algorithm.title} - #{if @mode == "encode", do: "encoded", else: "cipher"}"
+                      }
                     />
                   <% true -> %>
                     <.output id={"stage-text-#{i}"} text={stage.value} />
@@ -559,24 +563,31 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
           Click the symbols below to write the cipher text.
         </p>
       </div>
-      <div id="symbol-keyboard" class="flex flex-wrap gap-1.5">
+      <div id="symbol-keyboard" class="flex flex-wrap gap-2">
         <button
           :for={{entry, i} <- Enum.with_index(@algorithm.symbol_key)}
           type="button"
           id={"key-#{i}"}
           phx-click="add_symbol"
           phx-value-index={i}
-          class="grid place-items-center rounded-md border border-base-300 bg-base-100 p-1 transition hover:border-primary hover:-translate-y-0.5"
-          aria-label={"Symbol #{i + 1}"}
+          class="group flex flex-col items-center justify-end gap-1 min-w-12 rounded-lg border border-base-300 bg-base-100 px-1.5 pt-1.5 pb-1 transition hover:border-primary hover:bg-primary/5 hover:-translate-y-0.5 hover:shadow-sm active:translate-y-0"
+          aria-label={"Symbol #{i + 1} (#{entry["letter"]})"}
+          title={entry["letter"]}
         >
           <.key_glyph algorithm={@algorithm} entry={entry} />
+          <span
+            id={"key-#{i}-letter"}
+            class="font-mono text-sm font-semibold uppercase leading-none text-base-content/60 group-hover:text-primary transition-colors"
+          >
+            {entry["letter"]}
+          </span>
         </button>
       </div>
       <div class="flex flex-wrap gap-2">
         <button
           type="button"
           id="key-space"
-          class="btn btn-sm"
+          class="btn"
           phx-click="add_char"
           phx-value-char="space"
         >
@@ -585,7 +596,7 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
         <button
           type="button"
           id="key-newline"
-          class="btn btn-sm"
+          class="btn"
           phx-click="add_char"
           phx-value-char="newline"
         >
@@ -594,13 +605,13 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
         <button
           type="button"
           id="key-backspace"
-          class="btn btn-sm"
+          class="btn"
           phx-click="backspace"
           aria-label="Delete the last symbol"
         >
-          <.icon name="hero-backspace" class="size-4" />
+          <.icon name="hero-backspace" class="size-5" />
         </button>
-        <button type="button" id="key-clear" class="btn btn-sm btn-ghost" phx-click="clear">
+        <button type="button" id="key-clear" class="btn btn-ghost" phx-click="clear">
           Clear
         </button>
       </div>
@@ -692,10 +703,10 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
         <button
           type="button"
           id="done-editing"
-          class="btn btn-primary btn-sm"
+          class="btn btn-primary"
           phx-click="toggle_edit"
         >
-          <.icon name="hero-check" class="size-4" /> Done
+          <.icon name="hero-check" class="size-5" /> Done
         </button>
       </div>
 
@@ -769,7 +780,7 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
             <button
               type="button"
               id={"editor-delete-#{step.index}"}
-              class="btn btn-ghost btn-sm btn-square"
+              class="btn btn-ghost btn-square"
               phx-click="delete_step"
               phx-value-index={step.index}
               disabled={length(@steps) == 1 and not Algorithm.pictures?(@algorithm)}
@@ -777,7 +788,7 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
               aria-label="Remove step"
               title="Remove step"
             >
-              <.icon name="hero-trash" class="size-4" />
+              <.icon name="hero-trash" class="size-5" />
             </button>
           </div>
         </div>
@@ -838,6 +849,7 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
     doc: "style, align, background / ink (\"auto\" or #rrggbb), transparent"
 
   attr :detected, :map, required: true, doc: "the colours detected by the hook"
+  attr :filename, :string, required: true, doc: "of the downloaded PNG, without extension"
 
   # The encoded symbols as one image, drawn by the SymbolImage hook, with its
   # options (style, alignment, colours) and a PNG download.
@@ -849,7 +861,7 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
       id="symbol-image"
       phx-hook="SymbolImage"
       data-spec={@spec}
-      data-filename={"#{@algorithm.title} - encoded"}
+      data-filename={@filename}
       class="space-y-3"
     >
       <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
@@ -866,7 +878,7 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
               }
               type="button"
               id={"style-#{style}"}
-              class={["btn btn-xs join-item", @options.style == style && "btn-primary"]}
+              class={["btn btn-sm join-item", @options.style == style && "btn-primary"]}
               phx-click="image_style"
               phx-value-style={style}
               aria-pressed={to_string(@options.style == style)}
@@ -889,24 +901,24 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
               }
               type="button"
               id={"align-#{align}"}
-              class={["btn btn-xs join-item", @options.align == align && "btn-primary"]}
+              class={["btn btn-sm join-item", @options.align == align && "btn-primary"]}
               phx-click="image_align"
               phx-value-align={align}
               aria-pressed={to_string(@options.align == align)}
               aria-label={"Align #{align}"}
               title={"Align #{align}"}
             >
-              <.icon name={icon} class="size-4" />
+              <.icon name={icon} class="size-5" />
             </button>
           </div>
         </div>
         <button
           type="button"
           id="download-image"
-          class="btn btn-xs btn-ghost ml-auto"
+          class="btn btn-sm btn-ghost ml-auto"
           data-download
         >
-          <.icon name="hero-arrow-down-tray" class="size-4" /> Download PNG
+          <.icon name="hero-arrow-down-tray" class="size-5" /> Download PNG
         </button>
       </div>
       <form
@@ -936,11 +948,11 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
             type="button"
             id="background-transparent"
             phx-click="image_transparent"
-            class={["btn btn-xs", @options.transparent && "btn-primary"]}
+            class={["btn btn-sm", @options.transparent && "btn-primary"]}
             aria-pressed={to_string(@options.transparent)}
             title="No background: a PNG to put on anything"
           >
-            <span class="inline-block size-3 rounded-sm ring-1 ring-base-content/30 checkerboard"></span>
+            <span class="inline-block size-4 rounded-sm ring-1 ring-base-content/30 checkerboard"></span>
             Transparent
           </button>
         </div>
@@ -974,12 +986,12 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
         phx-click="image_auto"
         phx-value-colour={@field}
         disabled={@disabled}
-        class={["btn btn-xs", @value == "auto" && "btn-primary"]}
+        class={["btn btn-sm", @value == "auto" && "btn-primary"]}
         aria-pressed={to_string(@value == "auto")}
         title={@title}
       >
         <span
-          class="inline-block size-3 rounded-sm ring-1 ring-base-content/30"
+          class="inline-block size-4 rounded-sm ring-1 ring-base-content/30"
           style={"background: #{@detected || "transparent"}"}
         ></span>
         Detected
@@ -990,7 +1002,7 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
         name={@field}
         value={if @value == "auto", do: @detected || "#ffffff", else: @value}
         disabled={@disabled}
-        class="size-7 cursor-pointer rounded border border-base-300 bg-transparent disabled:cursor-not-allowed"
+        class="size-8 cursor-pointer rounded border border-base-300 bg-transparent disabled:cursor-not-allowed"
         aria-label={"#{@label} colour"}
         title={"Choose the #{String.downcase(@label)} colour"}
       />
@@ -1035,6 +1047,10 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
   defp image_token(_algorithm, {:char, " "}), do: %{t: "space"}
   defp image_token(_algorithm, {:char, char}), do: %{t: "char", c: char}
   defp image_token(_algorithm, {:missing, letter}), do: %{t: "missing", c: letter}
+
+  # Whether symbol tokens have anything to draw besides spaces and line
+  # breaks (with nothing, the image would be an empty, unstyled box).
+  defp drawable?(tokens), do: Enum.any?(tokens, &(elem(&1, 0) != :char))
 
   defp px(v), do: "#{Float.round(v * 1.0, 2)}px"
 end

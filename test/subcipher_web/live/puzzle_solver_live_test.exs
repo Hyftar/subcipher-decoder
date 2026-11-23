@@ -14,7 +14,11 @@ defmodule SubcipherWeb.PuzzleSolverLiveTest do
       puzzle = puzzle_fixture(scope)
       {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
 
+      # Hidden until asked for: they can spoil the puzzle.
       assert has_element?(view, "#suggestions-symbols")
+      refute has_element?(view, "#suggestion-symbols-0")
+
+      view |> element("#toggle-suggestions-symbols") |> render_click()
       assert has_element?(view, "#suggestion-symbols-0", "Frequency match")
       assert view |> element("#progress") |> render() =~ "0 / 26"
 

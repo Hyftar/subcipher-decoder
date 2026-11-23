@@ -24,8 +24,11 @@ defmodule SubcipherWeb.AlgorithmLiveTest do
 
     assert has_element?(view, "#algorithm-step-1", "Caesar cipher")
     assert has_element?(view, "#mode-encode[aria-selected=true]")
+    # Nothing to copy yet.
+    refute has_element?(view, "#stage-text-1-copy")
 
     view |> form("#text-form", %{text: "Hello"}) |> render_change()
+    assert has_element?(view, "#stage-text-1-copy")
     assert view |> element("#stage-text-0") |> render() =~ "Hello"
     assert view |> element("#stage-text-1") |> render() =~ "Khoor"
 
@@ -52,17 +55,31 @@ defmodule SubcipherWeb.AlgorithmLiveTest do
     {:ok, algorithm} = Algorithms.create_from_puzzle(scope, Ciphers.get_puzzle!(puzzle.id))
     {:ok, view, _} = live(conn, ~p"/algorithms/#{algorithm}")
 
+    # No image (and no detected background) until there is something to draw.
+    refute has_element?(view, "#symbol-image")
+    assert has_element?(view, "#symbol-image-empty")
+
     view |> form("#text-form", %{text: "hi"}) |> render_change()
     assert %{"lines" => [[%{"t" => "glyph"}, %{"t" => "glyph"}]]} = image_spec(view)
+    refute has_element?(view, "#symbol-image-empty")
 
     {:ok, view, _} = live(conn, ~p"/algorithms/#{algorithm}?mode=decode")
     refute has_element?(view, "#text-form")
+    refute has_element?(view, "#symbol-image")
     h = Enum.find_index(algorithm.symbol_key, &(&1["letter"] == "H"))
     i = Enum.find_index(algorithm.symbol_key, &(&1["letter"] == "I"))
+
+    # Each key shows the letter it stands for.
+    assert has_element?(view, "#key-#{h}-letter", "H")
 
     view |> element("#key-#{h}") |> render_click()
     view |> element("#key-#{i}") |> render_click()
     assert view |> element("#stage-text-1") |> render() =~ "HI"
+
+    # The cipher symbols are drawn like the encoded image, with its options.
+    assert %{"lines" => [[%{"t" => "glyph"}, %{"t" => "glyph"}]]} = image_spec(view)
+    view |> element("#align-left") |> render_click()
+    assert image_spec(view)["align"] == "left"
 
     view |> element("#key-backspace") |> render_click()
     assert view |> element("#stage-text-1") |> render() =~ "H"

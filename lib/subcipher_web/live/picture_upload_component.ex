@@ -239,10 +239,10 @@ defmodule SubcipherWeb.PictureUploadComponent do
                 phx-click="cancel-upload"
                 phx-value-ref={entry.ref}
                 phx-target={@myself}
-                class="btn btn-ghost btn-xs"
+                class="btn btn-ghost btn-sm"
                 aria-label="Remove picture"
               >
-                <.icon name="hero-x-mark" class="size-4" />
+                <.icon name="hero-x-mark" class="size-5" />
               </button>
             </div>
             <p :for={err <- upload_errors(@uploads.image, entry)} class="text-sm text-error">

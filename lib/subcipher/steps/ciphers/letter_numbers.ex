@@ -56,4 +56,45 @@ defmodule Subcipher.Steps.Ciphers.LetterNumbers do
       if index in 0..25, do: <<?A + index>>, else: Alphabet.unknown()
     end)
   end
+
+  # Whether A is 1 or 0 shows in the numbers themselves.
+  @impl true
+  def suggestions(input, _params) do
+    numbers = Regex.scan(~r/\d+/, input) |> List.flatten() |> Enum.map(&String.to_integer/1)
+
+    if numbers == [] do
+      []
+    else
+      zero? = 0 in numbers
+      twenty_six? = 26 in numbers
+      out_of_range = Enum.count(numbers, &(&1 > 26))
+
+      one = %{
+        label: "A = 1 (A1Z26)",
+        params: %{first: "1"},
+        reason:
+          cond do
+            zero? -> "Unlikely: the text has a 0, which A1Z26 can't encode."
+            twenty_six? -> "The text has a 26, which only exists when A = 1 (Z = 26)."
+            true -> "The usual convention: all numbers are between 1 and 26."
+          end <> out_of_range_note(out_of_range)
+      }
+
+      zero = %{
+        label: "A = 0",
+        params: %{first: "0"},
+        reason:
+          cond do
+            zero? -> "The text has a 0, which only exists when A = 0."
+            twenty_six? -> "Unlikely: the text has a 26, which doesn't exist when A = 0 (Z = 25)."
+            true -> "The other convention: every letter one place later than with A = 1."
+          end <> out_of_range_note(out_of_range)
+      }
+
+      if zero? and not twenty_six?, do: [zero, one], else: [one, zero]
+    end
+  end
+
+  defp out_of_range_note(0), do: ""
+  defp out_of_range_note(n), do: " #{n} number(s) are above 26: maybe not letter numbers."
 end

@@ -86,4 +86,75 @@ defmodule Subcipher.Steps.Ciphers.SymbolSubstitution do
       dupes -> "Used for several symbols: #{dupes |> Enum.sort() |> Enum.join(", ")}"
     end
   end
+
+  # Starting points for the symbol grid. Applying one replaces the whole
+  # mapping.
+  @impl true
+  def suggestions(input, _params) do
+    symbols = input |> Alphabet.symbol_frequencies() |> Enum.map(&elem(&1, 0))
+
+    if symbols == [] do
+      []
+    else
+      by_frequency = symbols |> Enum.zip(Alphabet.english_order()) |> Map.new()
+
+      frequency = %{
+        label: "Frequency match",
+        params: %{mapping: by_frequency},
+        reason:
+          "The most frequent symbols mapped to the most frequent English letters (E, T, A, O, I, N…): a starting point, fix the wrong ones by hand." <>
+            if(length(symbols) > 26,
+              do: " There are #{length(symbols)} symbols, more than letters: some stay unknown.",
+              else: ""
+            )
+      }
+
+      # Symbols that are letters already (e.g. after another step).
+      letters = Enum.filter(symbols, &(&1 =~ ~r/^[A-Za-z]$/))
+
+      as_is =
+        if letters != [] do
+          [
+            %{
+              label: "Letters as they are",
+              params: %{mapping: Map.new(letters, &{&1, String.upcase(&1)})},
+              reason:
+                "#{length(letters)} of the #{length(symbols)} symbols are letters already: keep them, then substitute the rest."
+            }
+          ]
+        else
+          []
+        end
+
+      [frequency | as_is]
+    end
+  end
+
+  # Each distinct character is a symbol; whitespace separates words; the
+  # symbols already given a single letter by the user are kept.
+  @impl true
+  def solve(input, %{mapping: current}) do
+    tokens =
+      input
+      |> String.graphemes()
+      |> Enum.map(fn c -> if c =~ ~r/^\s$/u or c == Alphabet.unknown(), do: :gap, else: c end)
+
+    fixed = Map.filter(current || %{}, fn {_, to} -> to =~ ~r/^[A-Z]$/ end)
+
+    case Subcipher.Solver.solve(tokens, fixed: fixed) do
+      {:ok, %{mapping: solved}} ->
+        mapping = Map.merge(current || %{}, solved)
+        kept = if fixed == %{}, do: "", else: " Your #{map_size(fixed)} letter(s) were kept."
+
+        {:ok,
+         %{
+           label: "Solver",
+           params: %{mapping: mapping},
+           reason: Subcipher.Solver.explain(decode(input, %{mapping: mapping})) <> kept
+         }}
+
+      {:error, :too_short} ->
+        {:error, "Too short to solve: at least 8 symbols are needed."}
+    end
+  end
 end

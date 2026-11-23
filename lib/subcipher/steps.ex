@@ -60,12 +60,56 @@ defmodule Subcipher.Steps do
 
   @doc """
   Whether `cipher` implements an optional callback (`summary/1`,
-  `candidates/2`). Loads the module first: `function_exported?/3` alone is
+  `suggestions/2`). Loads the module first: `function_exported?/3` alone is
   false for modules not loaded yet.
   """
   def implements?(cipher, fun, arity) do
     Code.ensure_loaded?(cipher) and function_exported?(cipher, fun, arity)
   end
+
+  @max_suggestions 5
+
+  @doc """
+  The cipher's suggestions for `input` (see `c:Subcipher.Steps.Cipher.suggestions/2`),
+  at most #{@max_suggestions}, each with a `:preview` of the output it gives and
+  whether it is already `:applied`. `nil` when the cipher doesn't suggest.
+  """
+  def suggestions(cipher, input, params) do
+    if implements?(cipher, :suggestions, 2) do
+      input
+      |> cipher.suggestions(params)
+      |> Enum.take(@max_suggestions)
+      |> Enum.map(fn suggestion ->
+        full = Map.merge(params, suggestion.params)
+
+        Map.merge(suggestion, %{
+          preview: preview(cipher.decode(input, full)),
+          applied: full == params
+        })
+      end)
+    end
+  end
+
+  @doc """
+  Runs the cipher's solver on `input` (see `c:Subcipher.Steps.Cipher.solve/2`).
+  Returns `{:ok, suggestion}` (with `:preview` and `:applied`, like
+  `suggestions/3`) or `{:error, message}`.
+  """
+  def solve(cipher, input, params) do
+    if implements?(cipher, :solve, 2) do
+      with {:ok, suggestion} <- cipher.solve(input, params) do
+        full = Map.merge(params, suggestion.params)
+        preview = preview(cipher.decode(input, full))
+        {:ok, Map.merge(suggestion, %{preview: preview, applied: full == params})}
+      end
+    else
+      {:error, "This cipher has no solver."}
+    end
+  end
+
+  @doc "A one-line preview of a decoded text."
+  def preview(text),
+    do: text |> String.replace(~r/\s+/u, " ") |> String.trim() |> String.slice(0, 120)
 
   ## Parameters
 

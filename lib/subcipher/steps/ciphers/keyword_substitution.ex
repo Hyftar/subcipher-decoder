@@ -64,4 +64,44 @@ defmodule Subcipher.Steps.Ciphers.KeywordSubstitution do
   def summary(%{keyword: keyword}) do
     "Plain  ABCDEFGHIJKLMNOPQRSTUVWXYZ\nCipher #{cipher_alphabet(keyword)}"
   end
+
+  # Keywords worth trying: the ones known from Old School RuneScape first,
+  # then common choices.
+  @known_keywords [
+    {"FAITH", "The key of the Warning note in Fallen From Grace (OSRS)."},
+    {"ZAROS", "A god of Gielinor, a plausible keyword in OSRS puzzles."},
+    {"GUTHIX", "A god of Gielinor, a plausible keyword in OSRS puzzles."},
+    {"SARADOMIN", "A god of Gielinor, a plausible keyword in OSRS puzzles."},
+    {"ZAMORAK", "A god of Gielinor, a plausible keyword in OSRS puzzles."},
+    {"GIELINOR", "The world of RuneScape, a plausible keyword."},
+    {"KEYWORD", "A common textbook keyword."},
+    {"ZEBRAS", "The usual textbook example of a keyword cipher."},
+    {"SECRET", "A common textbook keyword."},
+    {"CIPHER", "A common textbook keyword."}
+  ]
+
+  # Tries the known keywords and keeps the most English-like results.
+  @impl true
+  def suggestions(input, _params) do
+    if Alphabet.frequencies(input) == %{} do
+      []
+    else
+      @known_keywords
+      |> Enum.map(fn {keyword, why} ->
+        output = decode(input, %{keyword: keyword})
+        {Alphabet.english_score(output), keyword, why, output}
+      end)
+      |> Enum.sort()
+      |> Enum.take(5)
+      |> Enum.map(fn {_score, keyword, why, output} ->
+        hint =
+          case Alphabet.words_hint(output) do
+            nil -> ""
+            hint -> " The result " <> hint <> "."
+          end
+
+        %{label: "Keyword #{keyword}", params: %{keyword: keyword}, reason: why <> hint}
+      end)
+    end
+  end
 end

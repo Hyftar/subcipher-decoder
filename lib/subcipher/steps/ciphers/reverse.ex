@@ -45,4 +45,34 @@ defmodule Subcipher.Steps.Ciphers.Reverse do
     |> Regex.split(text, include_captures: true)
     |> Enum.map_join(fn part -> if part =~ ~r/^\s+$/u, do: part, else: String.reverse(part) end)
   end
+
+  # Reversing doesn't change letter frequencies: compare the modes by the
+  # common English words and letter pairs they produce instead.
+  @impl true
+  def suggestions(input, _params) do
+    if String.trim(input) == "" do
+      []
+    else
+      [{"lines", "Each line"}, {"words", "Each word"}, {"text", "Whole text"}]
+      |> Enum.map(fn {mode, label} ->
+        output = decode(input, %{mode: mode})
+        words = Alphabet.common_words(output)
+        {{-length(words), -Alphabet.bigram_ratio(output)}, mode, label, output}
+      end)
+      |> Enum.sort()
+      |> Enum.map(fn {_, mode, label, output} ->
+        %{label: label, params: %{mode: mode}, reason: reason(output)}
+      end)
+    end
+  end
+
+  defp reason(output) do
+    pairs =
+      "#{round(Alphabet.bigram_ratio(output) * 100)}% of its letter pairs are common in English (English text: about 30–40%)"
+
+    case Alphabet.words_hint(output) do
+      nil -> "Reads as no common English word; " <> pairs <> "."
+      hint -> "The result " <> hint <> "; " <> pairs <> "."
+    end
+  end
 end

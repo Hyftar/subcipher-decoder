@@ -146,7 +146,15 @@ defmodule SubcipherWeb.StepComponents do
   attr :number, :integer, required: true, doc: "displayed step number"
   attr :result, :map, required: true, doc: "an entry of Subcipher.Steps.run/2"
   attr :form, :any, required: true
-  attr :candidates, :any, default: nil, doc: "suggestions when shown, else nil"
+
+  attr :solver_state, :any,
+    default: nil,
+    doc: "nil (no solver), :idle, :running, {:ok, suggestion} or {:error, message}"
+
+  attr :suggestions, :any,
+    default: nil,
+    doc: "Subcipher.Steps.suggestions/3: a list, or nil when the cipher doesn't suggest"
+
   attr :can_move_up, :boolean, required: true
   attr :can_move_down, :boolean, required: true
   attr :can_delete, :boolean, required: true
@@ -296,41 +304,148 @@ defmodule SubcipherWeb.StepComponents do
         >{@summary}</pre>
       </div>
 
-      <div :if={Steps.implements?(@cipher, :candidates, 2)} class="space-y-2">
-        <button
-          type="button"
-          id={"toggle-candidates-#{@step.id}"}
-          class="btn btn-ghost btn-xs"
-          phx-click="toggle_candidates"
-          phx-value-id={@step.id}
-        >
-          <.icon name="hero-sparkles" class="size-4" />
-          {if @candidates, do: "Hide suggestions", else: "Suggest keys"}
-        </button>
-        <ol
-          :if={@candidates}
-          id={"candidates-#{@step.id}"}
-          class="rounded-lg border border-base-300 divide-y divide-base-300 max-h-64 overflow-y-auto"
-        >
-          <li :for={{candidate, i} <- Enum.with_index(@candidates)}>
-            <button
-              type="button"
-              id={"candidate-#{@step.id}-#{i}"}
-              class="w-full flex items-center gap-3 px-3 py-1.5 text-left text-sm hover:bg-base-200 transition-colors"
-              phx-click={JS.push("apply_candidate", value: %{id: @step.id, params: candidate.params})}
-            >
-              <span class="w-20 shrink-0 text-xs text-base-content/60">{candidate.label}</span>
-              <span class="font-mono truncate">{candidate.preview}</span>
-            </button>
-          </li>
-        </ol>
-      </div>
+      <.suggestions_panel
+        :if={@suggestions || @solver_state}
+        id={to_string(@step.id)}
+        suggestions={Enum.map(@suggestions || [], &Map.put(&1, :use, use_params(@step, &1)))}
+        solver={
+          @solver_state &&
+            %{
+              state: with_use(@solver_state, @step),
+              start: JS.push("solve", value: %{target: @step.id})
+            }
+        }
+      />
 
       <div class="space-y-1.5">
         <h3 class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Output</h3>
         <.output id={"step-output-#{@step.id}"} text={@result.output} />
       </div>
     </section>
+    """
+  end
+
+  defp use_params(step, suggestion),
+    do: JS.push("apply_suggestion", value: %{id: step.id, params: suggestion.params})
+
+  defp with_use({:ok, solution}, step),
+    do: {:ok, Map.put(solution, :use, use_params(step, solution))}
+
+  defp with_use(state, _step), do: state
+
+  attr :id, :string, required: true, doc: "suffix of the element ids (a step id, \"symbols\"…)"
+
+  attr :suggestions, :list,
+    default: [],
+    doc: "%{label, reason, preview, applied, use: %JS{}} each"
+
+  attr :solver, :map,
+    default: nil,
+    doc:
+      "%{state: :idle | :running | {:ok, suggestion} | {:error, message}, start: %JS{}}; nil without solver"
+
+  @doc """
+  Suggested settings, each with the reason it was suggested and a preview
+  of the result; "Use" applies one. With a `solver`, a "Try to solve" card
+  runs it (in the background) and shows its result like a suggestion.
+  """
+  def suggestions_panel(assigns) do
+    ~H"""
+    <div id={"suggestions-#{@id}"} class="space-y-2 min-w-0">
+      <h3 class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-base-content/50">
+        <.icon name="hero-sparkles" class="size-4" /> Suggestions
+      </h3>
+      <p :if={@suggestions == [] and !@solver} class="text-sm text-base-content/60">
+        No suggestions for this input (it may be too short to analyse).
+      </p>
+      <ol class="grid grid-cols-[minmax(0,1fr)] gap-2">
+        <.suggestion_card
+          :for={{suggestion, i} <- Enum.with_index(@suggestions)}
+          id={"suggestion-#{@id}-#{i}"}
+          use_id={"apply-suggestion-#{@id}-#{i}"}
+          suggestion={suggestion}
+        />
+        <li
+          :if={@solver}
+          id={"solver-#{@id}"}
+          class="min-w-0 rounded-xl border border-dashed border-primary/40 bg-primary/5 p-3 space-y-2"
+        >
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-semibold text-sm flex items-center gap-1.5">
+              <.icon name="hero-cpu-chip" class="size-4" /> Try to solve
+            </span>
+            <span
+              :if={@solver.state == :running}
+              class="flex items-center gap-1.5 text-sm text-base-content/70"
+            >
+              <span class="loading loading-spinner loading-xs"></span> Solving…
+            </span>
+            <button
+              :if={@solver.state != :running}
+              type="button"
+              id={"solve-#{@id}"}
+              class="btn btn-primary btn-xs ml-auto"
+              phx-click={@solver.start}
+            >
+              {if @solver.state == :idle, do: "Solve", else: "Solve again"}
+            </button>
+          </div>
+          <p :if={@solver.state in [:idle, :running]} class="text-sm text-base-content/70">
+            Searches for the letters that make the text read most like English (a second or
+            two). Letters you already set are kept, so fixing a few and solving again helps.
+          </p>
+          <p :if={match?({:error, _}, @solver.state)} class="text-sm text-error">
+            {elem(@solver.state, 1)}
+          </p>
+          <ol :if={match?({:ok, _}, @solver.state)}>
+            <.suggestion_card
+              id={"solution-#{@id}"}
+              use_id={"apply-solution-#{@id}"}
+              suggestion={elem(@solver.state, 1)}
+            />
+          </ol>
+        </li>
+      </ol>
+    </div>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :use_id, :string, required: true
+  attr :suggestion, :map, required: true
+
+  defp suggestion_card(assigns) do
+    ~H"""
+    <li
+      id={@id}
+      class={[
+        "min-w-0 rounded-xl border p-3 transition-colors bg-base-100",
+        if(@suggestion.applied,
+          do: "border-success/50 bg-success/5",
+          else: "border-base-300 hover:border-primary/50"
+        )
+      ]}
+    >
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="font-semibold text-sm">{@suggestion.label}</span>
+        <span :if={@suggestion.applied} class="badge badge-sm badge-success badge-soft">
+          <.icon name="hero-check" class="size-3" /> Applied
+        </span>
+        <button
+          :if={!@suggestion.applied}
+          type="button"
+          id={@use_id}
+          class="btn btn-primary btn-soft btn-xs ml-auto"
+          phx-click={@suggestion.use}
+        >
+          Use
+        </button>
+      </div>
+      <p class="mt-1 text-sm text-base-content/70">{@suggestion.reason}</p>
+      <p class="mt-1.5 font-mono text-sm truncate text-base-content/90" title={@suggestion.preview}>
+        {@suggestion.preview}
+      </p>
+    </li>
     """
   end
 

@@ -46,17 +46,41 @@ defmodule Subcipher.Steps.Ciphers.Caesar do
   @impl true
   def summary(%{shift: shift}), do: "A → #{<<?A + shift>>}, B → #{<<?A + rem(shift + 1, 26)>>}…"
 
-  # Only 26 keys: try them all and rank them by how English the result looks.
+  # Only 26 keys: try them all, keep the most English-looking results.
   @impl true
-  def candidates(input, _params) do
-    0..25
-    |> Enum.map(fn shift ->
-      output = decode(input, %{shift: shift})
-      {Alphabet.english_score(output), shift, output}
-    end)
-    |> Enum.sort()
-    |> Enum.map(fn {_score, shift, output} ->
-      %{label: "Shift #{shift}", params: %{shift: shift}, preview: output}
-    end)
+  def suggestions(input, _params) do
+    if Alphabet.frequencies(input) == %{} do
+      []
+    else
+      0..25
+      |> Enum.map(fn shift -> {Alphabet.english_score(decode(input, %{shift: shift})), shift} end)
+      |> Enum.sort()
+      |> Enum.take(5)
+      |> Enum.with_index(1)
+      |> Enum.map(fn {{_score, shift}, rank} ->
+        output = decode(input, %{shift: shift})
+
+        %{
+          label: if(shift == 13, do: "Shift 13 (ROT13)", else: "Shift #{shift}"),
+          params: %{shift: shift},
+          reason: reason(rank, output)
+        }
+      end)
+    end
+  end
+
+  defp reason(rank, output) do
+    closeness =
+      case rank do
+        1 -> "Of the 26 possible shifts, this one gives the letter frequencies closest to English"
+        2 -> "The 2nd closest letter frequencies to English of the 26 shifts"
+        3 -> "The 3rd closest letter frequencies to English of the 26 shifts"
+        n -> "The #{n}th closest letter frequencies to English of the 26 shifts"
+      end
+
+    case Alphabet.words_hint(output) do
+      nil -> closeness <> "."
+      hint -> closeness <> "; the result " <> hint <> "."
+    end
   end
 end

@@ -444,6 +444,129 @@ defmodule Subcipher.Ciphers do
 
   defp unanimous([v | rest]), do: if(Enum.all?(rest, &(&1 == v)), do: v, else: nil)
 
+  ## Suggestions for the symbols of the pictures
+
+  @english_order ~w(E T A O I N S H R D L C U M W F G Y P B V K J X Q Z)
+
+  @doc """
+  The symbols of the pictures in reading order, as symbol ids with `:gap`
+  between words (and lines); ignored symbols are left out.
+  """
+  def symbol_tokens(%Puzzle{glyphs: glyphs, symbols: symbols}) do
+    ignored = for s <- symbols, s.ignored, into: MapSet.new(), do: s.id
+
+    glyphs
+    |> Enum.reject(&MapSet.member?(ignored, &1.symbol_id))
+    |> Enum.chunk_by(&{&1.image_id, &1.line})
+    |> Enum.flat_map(fn line ->
+      [
+        :gap
+        | Enum.flat_map(
+            line,
+            &if(&1.space_before, do: [:gap, &1.symbol_id], else: [&1.symbol_id])
+          )
+      ]
+    end)
+    |> Enum.drop_while(&(&1 == :gap))
+  end
+
+  # Letters set by the user (single letters A-Z), kept by the suggestions.
+  defp known_letters(puzzle) do
+    for s <- puzzle.symbols,
+        not s.ignored,
+        is_binary(s.letter),
+        s.letter =~ ~r/^[A-Z]$/,
+        into: %{},
+        do: {s.id, s.letter}
+  end
+
+  @doc """
+  Suggests letters for the symbols without one, by frequency: the most
+  frequent symbols get the most frequent English letters not used yet.
+  Returns `%{label, letters: %{symbol_id => letter}, reason, preview}`, or
+  nil when every symbol has a letter.
+  """
+  def frequency_letters(%Puzzle{} = puzzle) do
+    known = known_letters(puzzle)
+
+    unassigned =
+      puzzle
+      |> symbol_tokens()
+      |> Enum.reject(&(&1 == :gap or Map.has_key?(known, &1)))
+      |> Enum.frequencies()
+      |> Enum.sort_by(fn {id, n} -> {-n, id} end)
+      |> Enum.map(&elem(&1, 0))
+
+    if unassigned != [] do
+      free_letters = @english_order -- Map.values(known)
+      letters = unassigned |> Enum.zip(Stream.cycle(free_letters)) |> Map.new()
+
+      %{
+        label: "Frequency match",
+        letters: letters,
+        reason:
+          "The most frequent symbols get the most frequent English letters (E, T, A, O, I, N…) not used yet: a starting point, fix the wrong ones by hand." <>
+            if(known == %{}, do: "", else: " Your #{map_size(known)} letter(s) are kept."),
+        preview: preview_with(puzzle, letters)
+      }
+    end
+  end
+
+  @doc """
+  Solves the symbols with `Subcipher.Solver` (keeping the letters already
+  set). Returns `{:ok, %{label, letters, reason, preview}}` or
+  `{:error, message}`. Takes about a second or two: run it in the background.
+  """
+  def solve_letters(%Puzzle{} = puzzle) do
+    known = known_letters(puzzle)
+
+    case Subcipher.Solver.solve(symbol_tokens(puzzle), fixed: known) do
+      {:ok, %{mapping: letters}} ->
+        decoded = plaintext(with_letters(puzzle, letters), "?")
+        kept = if known == %{}, do: "", else: " Your #{map_size(known)} letter(s) were kept."
+
+        {:ok,
+         %{
+           label: "Solver",
+           letters: letters,
+           reason: Subcipher.Solver.explain(decoded) <> kept,
+           preview: Subcipher.Steps.preview(decoded)
+         }}
+
+      {:error, :too_short} ->
+        {:error, "Too few symbols to solve: at least 8 are needed."}
+    end
+  end
+
+  @doc "Sets the letters of several symbols at once (`%{symbol_id => letter}`)."
+  def assign_letters(%Puzzle{id: puzzle_id}, letters) do
+    now = DateTime.utc_now(:second)
+
+    Repo.transaction(fn ->
+      for {symbol_id, letter} <- letters do
+        from(s in Symbol, where: s.id == ^symbol_id and s.puzzle_id == ^puzzle_id)
+        |> Repo.update_all(set: [letter: letter, updated_at: now])
+      end
+    end)
+
+    :ok
+  end
+
+  defp with_letters(puzzle, letters) do
+    symbols =
+      Enum.map(puzzle.symbols, fn s ->
+        case Map.fetch(letters, s.id) do
+          {:ok, letter} -> %{s | letter: letter}
+          :error -> s
+        end
+      end)
+
+    %{puzzle | symbols: symbols}
+  end
+
+  defp preview_with(puzzle, letters),
+    do: puzzle |> with_letters(letters) |> plaintext() |> Subcipher.Steps.preview()
+
   ## Helpers
 
   @doc """

@@ -6,7 +6,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
   alias Subcipher.Steps
 
   import SubcipherWeb.StepComponents,
-    only: [step_card: 1, output: 1, step_nav: 1, add_step_panel: 1]
+    only: [step_card: 1, output: 1, step_nav: 1, add_step_panel: 1, suggestions_panel: 1]
 
   # Height (px) at which the typical glyph is displayed in the cipher text.
   @display_height 40
@@ -26,10 +26,11 @@ defmodule SubcipherWeb.PuzzleLive.Show do
      |> assign(:show_add, false)
      # Invalid parameter forms being edited, by step id (kept until fixed).
      |> assign(:step_forms, %{})
-     # Steps whose key suggestions are shown.
-     |> assign(:open_candidates, MapSet.new())
      # Number of the step shown (?step=N), or :new for the "add a step" view.
      |> assign(:selected_step, 1)
+     # Solver results by {target, input key}, and the one being computed.
+     |> assign(:solutions, %{})
+     |> assign(:solving, nil)
      |> assign(:english_frequency, @english_frequency)
      |> load(puzzle)}
   end
@@ -83,6 +84,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
     |> assign(:plaintext, Ciphers.plaintext(puzzle))
     |> assign_pipeline()
     |> assign(:tolerance, round(puzzle.threshold * 1000))
+    |> assign_symbol_suggestions()
     |> keep_selection_valid()
   end
 
@@ -105,12 +107,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
             step.type |> Steps.params_changeset(step.params) |> to_step_form(step)
           end)
 
-        candidates =
-          if MapSet.member?(socket.assigns.open_candidates, step.id) and
-               Steps.implements?(result.cipher, :candidates, 2),
-             do: result.cipher.candidates(result.input, result.params)
-
-        %{number: i + 1 + offset, result: result, form: form, candidates: candidates}
+        %{number: i + 1 + offset, result: result, form: form}
       end
 
     picture_node =
@@ -146,11 +143,72 @@ defmodule SubcipherWeb.PuzzleLive.Show do
         true -> selected
       end
 
-    assign(socket,
-      selected_step: selected,
-      current_entry: Enum.find(socket.assigns.pipeline, &(&1.number == selected))
-    )
+    # Suggestions are only computed for the step shown.
+    current =
+      case Enum.find(socket.assigns.pipeline, &(&1.number == selected)) do
+        nil ->
+          nil
+
+        %{result: r} = entry ->
+          entry
+          |> Map.put(:suggestions, Steps.suggestions(r.cipher, r.input, r.params))
+          |> Map.put(:solve_key, {:step, r.step.id, :erlang.phash2(r.input)})
+      end
+
+    assign(socket, selected_step: selected, current_entry: current)
   end
+
+  # Suggestions for the symbols of the pictures (step 1 of a pictures puzzle).
+  defp assign_symbol_suggestions(socket) do
+    puzzle = socket.assigns.puzzle
+
+    if Puzzle.pictures?(puzzle) do
+      use_frequency = JS.push("apply_letters", value: %{source: "frequency"})
+
+      frequency =
+        case Ciphers.frequency_letters(puzzle) do
+          nil -> []
+          s -> [Map.merge(s, %{applied: false, use: use_frequency})]
+        end
+
+      socket
+      |> assign(:symbol_suggestions, frequency)
+      |> assign(:symbols_solve_key, {:symbols, :erlang.phash2(Ciphers.symbol_tokens(puzzle))})
+    else
+      assign(socket, symbol_suggestions: [], symbols_solve_key: nil)
+    end
+  end
+
+  # The solver card of the picture step: its solution applies letters.
+  defp symbols_solver_state(assigns) do
+    case solver_state(assigns, assigns.symbols_solve_key) do
+      {:ok, solution} ->
+        {:ok, Map.put(solution, :use, JS.push("apply_letters", value: %{source: "solver"}))}
+
+      state ->
+        state
+    end
+  end
+
+  # The state of the "Try to solve" card for `key`.
+  defp solver_state(%{solving: key}, key), do: :running
+
+  defp solver_state(assigns, key) do
+    case Map.get(assigns.solutions, key) do
+      nil -> :idle
+      {:ok, solution} -> {:ok, Map.put(solution, :applied, solution_applied?(assigns, solution))}
+      error -> error
+    end
+  end
+
+  # Whether a solution is what's currently set (letters or step settings).
+  defp solution_applied?(%{symbols: symbols}, %{letters: letters}),
+    do: Enum.all?(letters, fn {id, letter} -> match?(%{letter: ^letter}, symbols[id]) end)
+
+  defp solution_applied?(%{current_entry: %{result: r}}, %{params: params}),
+    do: Map.merge(r.params, params) == r.params
+
+  defp solution_applied?(_, _), do: false
 
   defp step_path(socket, number), do: ~p"/puzzles/#{socket.assigns.puzzle}?step=#{number}"
 
@@ -339,7 +397,6 @@ defmodule SubcipherWeb.PuzzleLive.Show do
       {:noreply,
        socket
        |> update(:step_forms, &Map.delete(&1, step.id))
-       |> update(:open_candidates, &MapSet.delete(&1, step.id))
        |> reload()}
     else
       _ -> {:noreply, put_flash(socket, :error, "Could not change the cipher of this step.")}
@@ -360,27 +417,52 @@ defmodule SubcipherWeb.PuzzleLive.Show do
     end
   end
 
-  def handle_event("apply_candidate", %{"id" => id, "params" => params}, socket) do
-    case find_step(socket, id) do
-      nil -> {:noreply, socket}
-      step -> {:noreply, update_step(socket, step, params)}
+  # Runs a solver in the background: for the symbols of the pictures, or
+  # for the step shown.
+  def handle_event("solve", %{"target" => "symbols"}, socket) do
+    puzzle = socket.assigns.puzzle
+    key = socket.assigns.symbols_solve_key
+    {:noreply, run_solver(socket, key, fn -> Ciphers.solve_letters(puzzle) end)}
+  end
+
+  def handle_event("solve", %{"target" => _step_id}, socket) do
+    case socket.assigns.current_entry do
+      %{result: r, solve_key: key} ->
+        {:noreply, run_solver(socket, key, fn -> Steps.solve(r.cipher, r.input, r.params) end)}
+
+      _ ->
+        {:noreply, socket}
     end
   end
 
-  def handle_event("toggle_candidates", %{"id" => id}, socket) do
+  def handle_event("apply_letters", %{"source" => source}, socket) do
+    letters =
+      case source do
+        "frequency" ->
+          case Ciphers.frequency_letters(socket.assigns.puzzle) do
+            nil -> nil
+            suggestion -> suggestion.letters
+          end
+
+        "solver" ->
+          case socket.assigns.solutions[socket.assigns.symbols_solve_key] do
+            {:ok, solution} -> solution.letters
+            _ -> nil
+          end
+      end
+
+    if letters do
+      :ok = Ciphers.assign_letters(socket.assigns.puzzle, letters)
+      {:noreply, reload(socket)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("apply_suggestion", %{"id" => id, "params" => params}, socket) do
     case find_step(socket, id) do
-      nil ->
-        {:noreply, socket}
-
-      step ->
-        open = socket.assigns.open_candidates
-
-        open =
-          if MapSet.member?(open, step.id),
-            do: MapSet.delete(open, step.id),
-            else: MapSet.put(open, step.id)
-
-        {:noreply, socket |> assign(:open_candidates, open) |> assign_pipeline()}
+      nil -> {:noreply, socket}
+      step -> {:noreply, update_step(socket, step, params)}
     end
   end
 
@@ -472,6 +554,29 @@ defmodule SubcipherWeb.PuzzleLive.Show do
       {:error, changeset} ->
         {:noreply, assign(socket, :title_form, to_form(changeset))}
     end
+  end
+
+  @impl true
+  def handle_async(:solve, {:ok, {key, result}}, socket) do
+    {:noreply,
+     socket
+     |> update(:solutions, &Map.put(&1, key, result))
+     |> assign(:solving, nil)}
+  end
+
+  def handle_async(:solve, {:exit, _reason}, socket) do
+    key = socket.assigns.solving
+
+    {:noreply,
+     socket
+     |> update(:solutions, &Map.put(&1, key, {:error, "The solver stopped unexpectedly."}))
+     |> assign(:solving, nil)}
+  end
+
+  defp run_solver(socket, key, fun) do
+    socket
+    |> assign(:solving, key)
+    |> start_async(:solve, fn -> {key, fun.()} end)
   end
 
   @impl true
@@ -663,11 +768,15 @@ defmodule SubcipherWeb.PuzzleLive.Show do
               number={@current_entry.number}
               result={@current_entry.result}
               form={@current_entry.form}
-              candidates={@current_entry.candidates}
-              can_move_up={@current_entry != hd(@pipeline)}
-              can_move_down={@current_entry != List.last(@pipeline)}
+              suggestions={@current_entry.suggestions}
+              solver_state={
+                if Steps.implements?(@current_entry.result.cipher, :solve, 2),
+                  do: solver_state(assigns, @current_entry.solve_key)
+              }
+              can_move_up={@current_entry.number != hd(@pipeline).number}
+              can_move_down={@current_entry.number != List.last(@pipeline).number}
               can_delete={Puzzle.pictures?(@puzzle) or length(@pipeline) > 1}
-              input_form={@current_entry == hd(@pipeline) && @input_form}
+              input_form={@current_entry.number == hd(@pipeline).number && @input_form}
             />
           <% true -> %>
             <.symbol_step
@@ -685,6 +794,13 @@ defmodule SubcipherWeb.PuzzleLive.Show do
               show_add={@show_add}
               tolerance={@tolerance}
               english_frequency={@english_frequency}
+              symbol_suggestions={@symbol_suggestions}
+              symbol_solver={
+                %{
+                  state: symbols_solver_state(assigns),
+                  start: JS.push("solve", value: %{target: "symbols"})
+                }
+              }
             />
         <% end %>
 
@@ -723,6 +839,8 @@ defmodule SubcipherWeb.PuzzleLive.Show do
   attr :show_add, :boolean, required: true
   attr :tolerance, :integer, required: true
   attr :english_frequency, :string, required: true
+  attr :symbol_suggestions, :list, required: true
+  attr :symbol_solver, :map, required: true
 
   # Step 1 of a pictures puzzle: the symbols of the pictures, substituted by
   # hand, with the symbol key.
@@ -798,6 +916,14 @@ defmodule SubcipherWeb.PuzzleLive.Show do
               Output
             </h2>
             <.output id="plaintext" text={@plaintext} />
+          </section>
+
+          <section class="rounded-2xl border border-base-300 bg-base-100 p-4 sm:p-6">
+            <.suggestions_panel
+              id="symbols"
+              suggestions={@symbol_suggestions}
+              solver={@symbol_solver}
+            />
           </section>
 
           <section class="rounded-2xl border border-base-300 bg-base-100">

@@ -42,11 +42,15 @@ defmodule Subcipher.Steps.OsrsTest do
       end
     end
 
-    test "the right shift is among the suggestions of every clue" do
-      for {clue, shift, _npc} <- @cipher_clues do
-        shifts = for %{params: %{shift: s}} <- Caesar.candidates(clue, %{}), do: s
-        assert shift in shifts
-      end
+    test "the right shift is among the 5 suggestions of nearly every clue" do
+      misses =
+        for {clue, shift, _npc} <- @cipher_clues,
+            shifts = for(%{params: %{shift: s}} <- Caesar.suggestions(clue, %{}), do: s),
+            shift not in shifts,
+            do: clue
+
+      # Six letters (DREZEL) are too few for letter statistics.
+      assert misses == ["GUHCHO"]
     end
 
     test "Venom-riddled note (ROT13)" do

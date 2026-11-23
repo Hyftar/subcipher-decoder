@@ -74,4 +74,84 @@ defmodule Subcipher.Steps.Alphabet do
       end)
     end
   end
+
+  # Frequent English words of 3+ letters, found even without spaces between
+  # words (decoded texts often have none).
+  @common_words ~w(THE AND THAT HAVE FOR NOT WITH YOU THIS BUT HIS FROM THEY SAY HER SHE
+                   WILL ONE ALL WOULD THERE THEIR WHAT OUT ABOUT WHO GET WHICH WHEN MAKE
+                   CAN LIKE TIME JUST HIM KNOW TAKE INTO YOUR SOME COULD THEM SEE OTHER
+                   THAN THEN NOW LOOK ONLY COME OVER THINK ALSO BACK AFTER USE TWO HOW OUR
+                   WORK FIRST WELL WAY EVEN NEW WANT BECAUSE ANY THESE GIVE DAY MOST ARE WAS
+                   HAS HAD WERE BEEN)
+
+  # Frequent English letter pairs.
+  @common_bigrams ~w(TH HE IN ER AN RE ON AT EN ND TI ES OR TE OF ED IS IT AL AR ST TO NT NG
+                     SE HA AS OU IO LE VE CO ME DE HI RI RO IC NE EA RA CE)
+
+  @doc """
+  Common English words (3+ letters) found in `text`, most frequent first,
+  whether or not it has spaces between words.
+  """
+  def common_words(text) do
+    letters = String.upcase(text)
+
+    @common_words
+    |> Enum.map(&{&1, count_occurrences(letters, &1)})
+    |> Enum.filter(fn {_, n} -> n > 0 end)
+    # Prefer longer words: "THE" inside "THEY" counts for both.
+    |> Enum.sort_by(fn {word, n} -> {-n * String.length(word), word} end)
+    |> Enum.map(&elem(&1, 0))
+  end
+
+  defp count_occurrences(text, word), do: length(String.split(text, word)) - 1
+
+  @doc """
+  Share (0..1) of the letter pairs of `text` (inside words) that are among
+  the most frequent English ones. English text is around 0.3–0.4,
+  scrambled text much lower.
+  """
+  def bigram_ratio(text) do
+    pairs =
+      for word <- String.split(String.upcase(text), ~r/[^A-Z]+/, trim: true),
+          [a, b] <- Enum.chunk_every(String.graphemes(word), 2, 1, :discard),
+          do: a <> b
+
+    case pairs do
+      [] -> 0.0
+      pairs -> Enum.count(pairs, &(&1 in @common_bigrams)) / length(pairs)
+    end
+  end
+
+  @doc """
+  Index of coincidence of the letters of `text`: the chance that two letters
+  picked at random are the same. English is about 0.066, uniformly random
+  letters about 0.038.
+  """
+  def index_of_coincidence(text) do
+    counts = frequencies(text) |> Map.values()
+    n = Enum.sum(counts)
+
+    if n < 2,
+      do: 0.0,
+      else: Enum.sum(Enum.map(counts, &(&1 * (&1 - 1)))) / (n * (n - 1))
+  end
+
+  @doc """
+  A short explanation of why `text` looks like English: the common words it
+  contains, if any. `nil` when nothing notable.
+  """
+  def words_hint(text) do
+    case common_words(text) do
+      [] -> nil
+      words -> "contains " <> (words |> Enum.take(4) |> Enum.join(", "))
+    end
+  end
+
+  @doc "Letters A..Z of `text` from most to least frequent (ties alphabetical)."
+  def letters_by_frequency(text) do
+    text |> frequencies() |> Enum.sort_by(fn {l, n} -> {-n, l} end) |> Enum.map(&elem(&1, 0))
+  end
+
+  @doc "English letters from most to least frequent."
+  def english_order, do: String.graphemes("ETAOINSHRDLCUMWFGYPBVKJXQZ")
 end

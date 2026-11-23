@@ -55,8 +55,12 @@ defmodule Subcipher.Steps.Cipher do
           optional(:options) => [{String.t(), String.t()}]
         }
 
-  @typedoc "A suggested set of parameters, e.g. the most likely Caesar shifts."
-  @type candidate :: %{label: String.t(), params: map(), preview: String.t()}
+  @typedoc """
+  A suggested set of parameters: a short `label`, the `params` (atom keys,
+  only those it sets: they are merged into the current ones) and the
+  `reason` it was suggested, in plain words for the user.
+  """
+  @type suggestion :: %{label: String.t(), params: map(), reason: String.t()}
 
   @doc "Identifier stored in the database. Never change it once used."
   @callback type() :: String.t()
@@ -81,13 +85,28 @@ defmodule Subcipher.Steps.Cipher do
   @doc "Optional one-line explanation of the parameters, e.g. the key alphabet."
   @callback summary(params :: map()) :: String.t() | nil
 
-  @doc "Optional parameter suggestions for `input`, best first."
-  @callback candidates(input :: String.t(), params :: map()) :: [candidate()]
+  @doc """
+  Optional: sets of parameters likely to decode `input` (the step's input),
+  best first, each with the reason it was suggested. About 5 are shown
+  (`Subcipher.Steps.suggestions/3` keeps the first ones and adds a preview
+  of the result). `params` are the step's current parameters. Return `[]`
+  when nothing can be suggested (e.g. the text is too short).
+  """
+  @callback suggestions(input :: String.t(), params :: map()) :: [suggestion()]
+
+  @doc """
+  Optional: tries to find the settings decoding `input` (e.g. with
+  `Subcipher.Solver`). Slower than `suggestions/2`, so it only runs when the
+  user asks ("Try to solve"), in the background. Returns one suggestion
+  (label, params, reason) or `{:error, message}`.
+  """
+  @callback solve(input :: String.t(), params :: map()) ::
+              {:ok, suggestion()} | {:error, String.t()}
 
   @doc "Optional: where this cipher is used in Old School RuneScape."
   @callback osrs_usage() :: String.t()
 
-  @optional_callbacks summary: 1, candidates: 2, osrs_usage: 0
+  @optional_callbacks summary: 1, suggestions: 2, solve: 2, osrs_usage: 0
 
   defmacro __using__(_opts) do
     quote do

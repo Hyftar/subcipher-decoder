@@ -79,14 +79,7 @@ defmodule Subcipher.Steps.CiphersTest do
 
     test "suggests the most English-looking shift first" do
       encrypted = Caesar.decode("The quick brown fox jumps over the lazy dog", %{shift: 26 - 7})
-
-      assert [
-               %{params: %{shift: 7}, preview: "The quick brown fox jumps over the lazy dog"}
-               | rest
-             ] =
-               Caesar.candidates(encrypted, %{})
-
-      assert length(rest) == 25
+      assert [%{params: %{shift: 7}} | _] = Caesar.suggestions(encrypted, %{})
     end
 
     test "rejects shifts outside 0..25 and empty shifts" do

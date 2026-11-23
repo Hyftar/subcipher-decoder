@@ -89,17 +89,25 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
       assert output(view, step) =~ "SGD PTHBJ"
     end
 
-    test "Caesar key suggestions rank the right shift first", %{conn: conn, puzzle: puzzle} do
+    test "suggestions: the right Caesar shift first, applied in one click", %{
+      conn: conn,
+      puzzle: puzzle
+    } do
       {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
       step = add_step(view, puzzle, "caesar")
       view |> form("#step-form-#{step.id}", step: %{shift: "0"}) |> render_change()
 
-      view |> element("#toggle-candidates-#{step.id}") |> render_click()
-      assert has_element?(view, "#candidate-#{step.id}-0", "Shift 3")
+      # Shown without asking, each with the reason it is suggested.
+      assert has_element?(view, "#suggestions-#{step.id}")
+      assert has_element?(view, "#suggestion-#{step.id}-0", "Shift 3")
+      assert has_element?(view, "#suggestion-#{step.id}-0", "closest to English")
+      assert has_element?(view, "#suggestion-#{step.id}-0", "THE QUICK BROWN FOX")
 
-      view |> element("#candidate-#{step.id}-0") |> render_click()
+      view |> element("#apply-suggestion-#{step.id}-0") |> render_click()
       assert output(view, step) =~ "THE QUICK BROWN FOX"
       assert hd(Steps.list_steps(puzzle)).params == %{"shift" => 3}
+      assert has_element?(view, "#suggestion-#{step.id}-0", "Applied")
+      refute has_element?(view, "#apply-suggestion-#{step.id}-0")
     end
 
     test "steps chain, and a step's cipher can be changed", %{conn: conn, puzzle: puzzle} do
@@ -306,6 +314,15 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
       assert hd(Steps.list_steps(puzzle)).params["spaces"] == 3
       assert has_element?(view, "#tile-#{step.id}-12")
       assert view |> element("#anagram-#{step.id} li:first-child") |> render() =~ "C"
+    end
+
+    test "steps whose cipher doesn't suggest have no suggestions panel", %{conn: conn} do
+      {:ok, puzzle} =
+        Ciphers.create_text_puzzle(%{title: "Morse", input_text: "... --- ..."}, "morse")
+
+      [step] = puzzle.steps
+      {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
+      refute has_element?(view, "#suggestions-#{step.id}")
     end
 
     test "symbol substitution on text and editing the input", %{conn: conn} do

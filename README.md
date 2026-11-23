@@ -76,8 +76,7 @@ ciphers:
   letter it stands for (one input per symbol, most frequent first).
 * **Letter substitution**: map each letter to another by hand (an alphabet grid showing
   how often each letter appears in the step's input).
-* **Caesar cipher**: a shift; **Suggest keys** ranks all 26 shifts by how English the
-  result looks.
+* **Caesar cipher**: a shift.
 * **Keyword substitution**: the cipher alphabet is a keyword followed by the rest of the
   alphabet.
 * **Vigenere cipher**: a Caesar shift that changes with each letter, following a key.
@@ -91,6 +90,41 @@ ciphers:
   letters minus 1, by default the clue's) sets how many word breaks the solution has;
   spaces left at either end are ignored.
 
+### Suggestions
+
+Most ciphers suggest up to 5 sets of settings for the step's input, each with the reason it
+was suggested and a preview of the result; **Use** applies one.
+
+| Cipher | How suggestions are found |
+| --- | --- |
+| Caesar | all 26 shifts tried, the 5 with the most English-like letter frequencies kept |
+| Vigenere | key length from the index of coincidence (how often letters repeat), then each key letter by frequency analysis; needs about 20 letters |
+| Keyword substitution | known keywords tried (`FAITH` from Fallen From Grace, gods of Gielinor, common ones) |
+| Letter substitution | frequency match (most frequent letters to E, T, A, O and so on), Caesar and Atbash alphabets |
+| Symbol substitution | frequency match; keeping the symbols that are letters already |
+| Letter numbers | A = 0 or A = 1, from the numbers present (a 0 or a 26) |
+| Reversed text | the three modes, by the English words and letter pairs they give |
+
+Atbash and Morse code have nothing to choose, and anagrams would need a dictionary of NPC
+names, so they don't suggest. The symbols of pictures (step 1) get a frequency match too.
+
+### Solver
+
+Substitutions (the symbols of pictures, symbol substitution and letter substitution) also
+have **Try to solve**: `Subcipher.Solver` searches for the letters that make the text read
+most like English (simulated annealing with random restarts), in the background, in a
+second or two. Its reason says how many of the decoded words are English words.
+
+* It scores letters with English 4-letter sequence frequencies and, when the text has word
+  breaks (pictures keep them), words with a dictionary (`Subcipher.English`).
+* Letters already set are kept: fix the ones you are sure of, then **Solve again**.
+* On English texts encrypted with a random alphabet it solves about 150 letters without
+  word breaks, or about 70 with them. Names, codes (fairy ring codes, for example) and a
+  symbol detected as two groups (fix it with **Merge**) make it harder.
+
+The statistics in `priv/english/` were built from the public-domain prose of NLTK's
+"Project Gutenberg Selections" corpus with `scripts/build_english_stats.exs`.
+
 ### Old School RuneScape
 
 The ciphers cover those used in Old School RuneScape, as documented on the
@@ -98,7 +132,7 @@ The ciphers cover those used in Old School RuneScape, as documented on the
 
 | In the game | Cipher |
 | --- | --- |
-| Treasure Trails cipher clues, Venom-riddled note (ROT13) | Caesar (the wiki's "+N" shifts mostly decode with a shift of N, sometimes 26 minus N: use **Suggest keys**) |
+| Treasure Trails cipher clues, Venom-riddled note (ROT13) | Caesar (the wiki's "+N" shifts mostly decode with a shift of N, sometimes 26 minus N: the step's suggestions include the right one for nearly every clue) |
 | Fallen From Grace, Warning note | Keyword substitution, keyword `FAITH` |
 | The Writing's on the Wall, Lunar alphabet, VPSG code, Secrets of the North's strange cipher | Symbol alphabets: start from pictures (their keys only exist as images) |
 | Easter eggs (bank booths, gravestones, Alliance records, and more) | Morse code |
@@ -116,7 +150,8 @@ including the dot shown for symbols that are not deciphered yet.
 1. Create a module implementing `Subcipher.Steps.Cipher` in `lib/subcipher/steps/ciphers/`
    (see the Atbash example in that module's docs): `type/0` (stored in the database, never
    change it), `name/0`, `description/0`, `fields/0` (its parameters) and `decode/2`.
-   Optional: `validate/1`, `summary/1`, `candidates/2` (key suggestions), `osrs_usage/0`
+   Optional: `validate/1`, `summary/1`, `suggestions/2` (settings to try, each with the
+   reason it was suggested; shown when implemented), `osrs_usage/0`
    (where the cipher appears in the game) and `input_kinds/0` (what it can start from,
    `[:text]` by default).
 2. List it in `@ciphers` in `Subcipher.Steps`.

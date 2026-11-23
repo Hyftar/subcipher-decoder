@@ -14,25 +14,35 @@ defmodule SubcipherWeb.PuzzleLive.Show do
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
-    puzzle = Ciphers.get_puzzle!(id)
+    case Ciphers.get_puzzle(id) do
+      nil ->
+        {:ok,
+         socket
+         |> put_flash(:error, "This puzzle doesn't exist anymore.")
+         |> push_navigate(to: ~p"/")}
 
-    {:ok,
-     socket
-     |> assign(:page_title, puzzle.title)
-     |> assign(:selected_symbol_id, nil)
-     |> assign(:selected_glyph_id, nil)
-     |> assign(:merging, false)
-     |> assign(:show_image, false)
-     |> assign(:show_add, false)
-     # Invalid parameter forms being edited, by step id (kept until fixed).
-     |> assign(:step_forms, %{})
-     # Number of the step shown (?step=N), or :new for the "add a step" view.
-     |> assign(:selected_step, 1)
-     # Solver results by {target, input key}, and the one being computed.
-     |> assign(:solutions, %{})
-     |> assign(:solving, nil)
-     |> assign(:english_frequency, @english_frequency)
-     |> load(puzzle)}
+      puzzle ->
+        {:ok, init(socket, puzzle)}
+    end
+  end
+
+  defp init(socket, puzzle) do
+    socket
+    |> assign(:page_title, puzzle.title)
+    |> assign(:selected_symbol_id, nil)
+    |> assign(:selected_glyph_id, nil)
+    |> assign(:merging, false)
+    |> assign(:show_image, false)
+    |> assign(:show_add, false)
+    # Invalid parameter forms being edited, by step id (kept until fixed).
+    |> assign(:step_forms, %{})
+    # Number of the step shown (?step=N), or :new for the "add a step" view.
+    |> assign(:selected_step, 1)
+    # Solver results by {target, input key}, and the one being computed.
+    |> assign(:solutions, %{})
+    |> assign(:solving, nil)
+    |> assign(:english_frequency, @english_frequency)
+    |> load(puzzle)
   end
 
   ## Loading & derived state

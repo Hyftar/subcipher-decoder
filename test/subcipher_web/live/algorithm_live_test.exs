@@ -45,7 +45,7 @@ defmodule SubcipherWeb.AlgorithmLiveTest do
     {:ok, view, _} = live(conn, ~p"/algorithms/#{algorithm}")
 
     view |> form("#text-form", %{text: "hi"}) |> render_change()
-    assert has_element?(view, "#stage-symbols-1 span[style*='background-image']")
+    assert %{"lines" => [[%{"t" => "glyph"}, %{"t" => "glyph"}]]} = image_spec(view)
 
     {:ok, view, _} = live(conn, ~p"/algorithms/#{algorithm}?mode=decode")
     refute has_element?(view, "#text-form")
@@ -59,6 +59,53 @@ defmodule SubcipherWeb.AlgorithmLiveTest do
     view |> element("#key-backspace") |> render_click()
     assert view |> element("#stage-text-1") |> render() =~ "H"
     refute view |> element("#stage-text-1") |> render() =~ "HI"
+  end
+
+  defp image_spec(view) do
+    view
+    |> element("#symbol-image")
+    |> render()
+    |> LazyHTML.from_fragment()
+    |> LazyHTML.attribute("data-spec")
+    |> hd()
+    |> Jason.decode!()
+  end
+
+  test "the encoded image: lines, alignment and background colour", %{conn: conn} do
+    puzzle = puzzle_fixture()
+
+    for {symbol_id, letter} <- solution(puzzle) do
+      {:ok, _} = Ciphers.assign_letter(Enum.find(puzzle.symbols, &(&1.id == symbol_id)), letter)
+    end
+
+    {:ok, algorithm} = Algorithms.create_from_puzzle(Ciphers.get_puzzle!(puzzle.id))
+    {:ok, view, _} = live(conn, ~p"/algorithms/#{algorithm}")
+    view |> form("#text-form", %{text: "hi you\nok 1"}) |> render_change()
+
+    spec = image_spec(view)
+    assert spec["images"] == [hd(algorithm.images)["path"]]
+
+    assert [
+             [_, _, %{"t" => "space"}, _, _, _],
+             [_, _, %{"t" => "space"}, %{"t" => "char", "c" => "1"}]
+           ] =
+             spec["lines"]
+
+    assert spec["align"] == "center" and spec["background"] == "auto"
+
+    view |> element("#align-right") |> render_click()
+    assert image_spec(view)["align"] == "right"
+    assert has_element?(view, "#align-right[aria-pressed=true]")
+
+    # The hook reports the glyphs' background; a colour can be chosen instead.
+    render_hook(view, "detected_background", %{color: "#6b5a3c"})
+    assert has_element?(view, "#background-auto span[style*='#6b5a3c']")
+
+    view |> form("#image-options", %{color: "#FFEEDD"}) |> render_change()
+    assert image_spec(view)["background"] == "#ffeedd"
+
+    view |> element("#background-auto") |> render_click()
+    assert image_spec(view)["background"] == "auto"
   end
 
   test "space and new line keys of the symbol keyboard", %{conn: conn} do
@@ -102,5 +149,14 @@ defmodule SubcipherWeb.AlgorithmLiveTest do
 
     assert view |> element("#make-algorithm") |> render_click() =~ "can&#39;t be reversed"
     assert Algorithms.list_algorithms() == []
+  end
+
+  test "a deleted or unknown algorithm sends back to the home page", %{conn: conn} do
+    for id <- ["999999", "abc"] do
+      assert {:error, {:live_redirect, %{to: "/", flash: %{"error" => message}}}} =
+               live(conn, "/algorithms/#{id}")
+
+      assert message =~ "doesn't exist"
+    end
   end
 end

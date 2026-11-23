@@ -49,6 +49,26 @@ defmodule Subcipher.Ciphers do
     )
   end
 
+  @doc "The puzzle with `id` (an integer or a string from a URL), or `nil`."
+  def get_puzzle(id) do
+    case parse_id(id) do
+      nil -> nil
+      id -> if Repo.get(Puzzle, id), do: get_puzzle!(id)
+    end
+  end
+
+  @doc "`id` as a positive integer, or `nil` when it isn't one."
+  def parse_id(id) when is_integer(id) and id > 0, do: id
+
+  def parse_id(id) when is_binary(id) do
+    case Integer.parse(id) do
+      {id, ""} when id > 0 -> id
+      _ -> nil
+    end
+  end
+
+  def parse_id(_), do: nil
+
   @doc """
   Gets a puzzle with its pictures, symbols and glyphs (in reading order:
   picture by picture).

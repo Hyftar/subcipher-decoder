@@ -16,18 +16,34 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
-    algorithm = Algorithms.get_algorithm!(id)
+    case Algorithms.get_algorithm(id) do
+      nil ->
+        {:ok,
+         socket
+         |> put_flash(:error, "This algorithm doesn't exist anymore.")
+         |> push_navigate(to: ~p"/")}
 
-    {:ok,
-     socket
-     |> assign(:page_title, algorithm.title)
-     |> assign(:algorithm, algorithm)
-     |> assign(:steps, describe_steps(algorithm))
-     |> assign(:mode, "encode")
-     # What the user typed, per mode (kept when switching).
-     |> assign(:texts, %{"encode" => "", "decode" => ""})
-     # Pictures, decode: the symbols composed with the keyboard.
-     |> assign(:symbols, [])}
+      algorithm ->
+        {:ok, init(socket, algorithm)}
+    end
+  end
+
+  defp init(socket, algorithm) do
+    socket
+    |> assign(:page_title, algorithm.title)
+    |> assign(:algorithm, algorithm)
+    |> assign(:steps, describe_steps(algorithm))
+    |> assign(:mode, "encode")
+    # What the user typed, per mode (kept when switching).
+    |> assign(:texts, %{"encode" => "", "decode" => ""})
+    # Pictures, decode: the symbols composed with the keyboard.
+    |> assign(:symbols, [])
+    # Pictures, encode: the composed image's options; the background is
+    # "auto" (detected from the glyphs, reported by the SymbolImage hook) or
+    # a colour chosen by hand.
+    |> assign(:image_align, "center")
+    |> assign(:image_background, "auto")
+    |> assign(:detected_background, nil)
   end
 
   @impl true
@@ -134,6 +150,22 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
   def handle_event("clear", _params, socket) do
     {:noreply, socket |> assign(:symbols, []) |> assign_trace()}
   end
+
+  def handle_event("image_options", %{"color" => "#" <> hex = color}, socket)
+      when byte_size(hex) == 6,
+      do: {:noreply, assign(socket, :image_background, String.downcase(color))}
+
+  def handle_event("image_options", _params, socket), do: {:noreply, socket}
+
+  def handle_event("image_align", %{"align" => align}, socket)
+      when align in ~w(left center right),
+      do: {:noreply, assign(socket, :image_align, align)}
+
+  def handle_event("background_auto", _params, socket),
+    do: {:noreply, assign(socket, :image_background, "auto")}
+
+  def handle_event("detected_background", %{"color" => color}, socket),
+    do: {:noreply, assign(socket, :detected_background, color)}
 
   def handle_event("delete", _params, socket) do
     {:ok, _} = Algorithms.delete_algorithm(socket.assigns.algorithm)
@@ -289,14 +321,23 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
                 <p class="text-xs font-semibold uppercase tracking-wider text-base-content/60">
                   {stage.label}
                 </p>
-                <%= if stage.kind == :symbols do %>
-                  <.symbols_view
-                    algorithm={@algorithm}
-                    tokens={stage.value}
-                    id={"stage-symbols-#{i}"}
-                  />
-                <% else %>
-                  <.output id={"stage-text-#{i}"} text={stage.value} />
+                <%= cond do %>
+                  <% stage.kind == :symbols and @mode == "encode" -> %>
+                    <.symbol_image
+                      algorithm={@algorithm}
+                      tokens={stage.value}
+                      align={@image_align}
+                      background={@image_background}
+                      detected={@detected_background}
+                    />
+                  <% stage.kind == :symbols -> %>
+                    <.symbols_view
+                      algorithm={@algorithm}
+                      tokens={stage.value}
+                      id={"stage-symbols-#{i}"}
+                    />
+                  <% true -> %>
+                    <.output id={"stage-text-#{i}"} text={stage.value} />
                 <% end %>
               </div>
             </li>
@@ -438,6 +479,134 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
     <span class="block bg-no-repeat rounded-sm" style={@style} aria-hidden="true"></span>
     """
   end
+
+  attr :algorithm, :any, required: true
+  attr :tokens, :list, required: true
+  attr :align, :string, required: true
+  attr :background, :string, required: true, doc: "\"auto\" or a #rrggbb colour"
+  attr :detected, :any, required: true, doc: "the background detected by the hook"
+
+  # The encoded symbols as one image, drawn by the SymbolImage hook, with its
+  # options (alignment, background colour) and a PNG download.
+  defp symbol_image(assigns) do
+    assigns = assign(assigns, :spec, Jason.encode!(image_spec(assigns)))
+
+    ~H"""
+    <div
+      id="symbol-image"
+      phx-hook="SymbolImage"
+      data-spec={@spec}
+      data-filename={"#{@algorithm.title} - encoded"}
+      class="space-y-3"
+    >
+      <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+        <div class="flex items-center gap-2">
+          <span class="text-base-content/70">Align</span>
+          <div id="image-align" class="join">
+            <button
+              :for={
+                {align, icon} <- [
+                  {"left", "hero-bars-3-bottom-left"},
+                  {"center", "hero-bars-3"},
+                  {"right", "hero-bars-3-bottom-right"}
+                ]
+              }
+              type="button"
+              id={"align-#{align}"}
+              class={["btn btn-xs join-item", @align == align && "btn-primary"]}
+              phx-click="image_align"
+              phx-value-align={align}
+              aria-pressed={to_string(@align == align)}
+              aria-label={"Align #{align}"}
+              title={"Align #{align}"}
+            >
+              <.icon name={icon} class="size-4" />
+            </button>
+          </div>
+        </div>
+        <form id="image-options" phx-change="image_options" class="flex items-center gap-2">
+          <span class="text-base-content/70">Background</span>
+          <button
+            type="button"
+            id="background-auto"
+            phx-click="background_auto"
+            class={["btn btn-xs", @background == "auto" && "btn-primary"]}
+            title="The colour around the glyphs in the pictures"
+          >
+            <span
+              class="inline-block size-3 rounded-sm ring-1 ring-base-content/30"
+              style={"background: #{@detected || "transparent"}"}
+            ></span>
+            Detected
+          </button>
+          <input
+            type="color"
+            id="background-color"
+            name="color"
+            value={if @background == "auto", do: @detected || "#ffffff", else: @background}
+            class="size-7 cursor-pointer rounded border border-base-300 bg-transparent"
+            aria-label="Background colour"
+            title="Choose a background colour"
+          />
+          <span :if={@background != "auto"} class="font-mono text-xs">{@background}</span>
+        </form>
+        <button
+          type="button"
+          id="download-image"
+          class="btn btn-xs btn-ghost ml-auto"
+          data-download
+        >
+          <.icon name="hero-arrow-down-tray" class="size-4" /> Download PNG
+        </button>
+      </div>
+      <div
+        id="symbol-image-canvas"
+        phx-update="ignore"
+        data-canvas
+        class="grid place-items-center rounded-lg bg-base-200/50 p-2"
+      >
+      </div>
+    </div>
+    """
+  end
+
+  # What the SymbolImage hook draws: the pictures, and lines of tokens
+  # (glyph crops scaled to a common height, spaces, characters).
+  defp image_spec(%{algorithm: algorithm, tokens: tokens, align: align, background: background}) do
+    lines =
+      tokens
+      |> Enum.chunk_by(&(&1 == {:char, "\n"}))
+      |> Enum.reject(&(&1 == [{:char, "\n"}]))
+      |> Enum.map(fn line -> Enum.map(line, &image_token(algorithm, &1)) end)
+
+    %{
+      images: Enum.map(algorithm.images, & &1["path"]),
+      lines: lines,
+      background: background,
+      align: align,
+      line_height: @symbol_height + 16
+    }
+  end
+
+  defp image_token(algorithm, {:symbol, i}) do
+    entry = Enum.at(algorithm.symbol_key, i)
+    image = Enum.at(algorithm.images, entry["image"])
+    scale = @symbol_height / max(image["glyph_height"] || entry["h"], 1)
+
+    %{
+      t: "glyph",
+      i: entry["image"],
+      x: entry["x"],
+      y: entry["y"],
+      w: entry["w"],
+      h: entry["h"],
+      scale: scale
+    }
+  end
+
+  defp image_token(_algorithm, {:char, " "}), do: %{t: "space"}
+  defp image_token(_algorithm, {:char, char}), do: %{t: "char", c: char}
+  defp image_token(_algorithm, {:missing, letter}), do: %{t: "missing", c: letter}
 
   defp px(v), do: "#{Float.round(v * 1.0, 2)}px"
 end

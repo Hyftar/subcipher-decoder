@@ -93,7 +93,9 @@ defmodule Subcipher.MixProject do
         "esbuild subcipher --minify",
         "phx.digest"
       ],
-      "test.js": ["cmd node --test assets/test/glyph_detector.test.mjs"],
+      "test.js": [
+        "cmd node --test assets/test/glyph_detector.test.mjs assets/test/symbol_image.test.mjs"
+      ],
       precommit: [
         "compile --warnings-as-errors",
         "deps.unlock --unused",

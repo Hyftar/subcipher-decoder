@@ -118,9 +118,15 @@ encode and decode any text (`/algorithms/:id`, listed on the home page):
   except **Anagram** (its order only fits the text it was solved on), so a puzzle with an
   anagram step can't become an algorithm;
 * for a pictures puzzle, the symbol key (a sample glyph per letter) is kept, with copies of
-  the pictures: encoding draws the result with those symbols, and decoding takes symbols
-  composed on an on-screen keyboard of the key. Letters without a symbol are shown as
-  missing.
+  the pictures: encoding composes a single image of the result with those symbols
+  (downloadable as PNG), and decoding takes symbols composed on an on-screen keyboard of
+  the key. Letters without a symbol are shown as missing.
+* the encoded image's lines are aligned left, centered or right, and its background is the
+  colour detected around the glyphs (the median of the pixels just outside their crops) or
+  a colour chosen by hand. With a chosen colour, the glyphs' own background pixels are
+  repainted in it (blended at the edges of the ink), so this works best on plain
+  backgrounds. Drawn in the browser (`assets/js/symbol_image.js`,
+  `assets/js/hooks/symbol_image_hook.js`).
 
 Its settings can't be changed: edit the puzzle and make a new algorithm instead.
 

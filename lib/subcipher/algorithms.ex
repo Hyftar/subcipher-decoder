@@ -27,6 +27,14 @@ defmodule Subcipher.Algorithms do
 
   def get_algorithm!(id), do: Repo.get!(Algorithm, id)
 
+  @doc "The algorithm with `id` (an integer or a string from a URL), or `nil`."
+  def get_algorithm(id) do
+    case Ciphers.parse_id(id) do
+      nil -> nil
+      id -> Repo.get(Algorithm, id)
+    end
+  end
+
   ## Creating
 
   @doc """

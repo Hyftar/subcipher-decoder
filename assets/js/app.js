@@ -27,12 +27,13 @@ import topbar from "../vendor/topbar"
 import {GlyphDetector} from "./hooks/glyph_detector_hook"
 import {CipherKeys} from "./hooks/cipher_keys_hook"
 import {AnagramTiles} from "./hooks/anagram_tiles_hook"
+import {SymbolImage} from "./hooks/symbol_image_hook"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, GlyphDetector, CipherKeys, AnagramTiles},
+  hooks: {...colocatedHooks, GlyphDetector, CipherKeys, AnagramTiles, SymbolImage},
 })
 
 // Show progress bar on live navigation and form submits

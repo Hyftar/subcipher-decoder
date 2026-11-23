@@ -80,6 +80,17 @@ defmodule SubcipherWeb.PuzzleLiveTest do
     end
   end
 
+  describe "Show of a missing puzzle" do
+    test "sends back to the home page", %{conn: conn} do
+      for id <- ["999999", "abc"] do
+        assert {:error, {:live_redirect, %{to: "/", flash: %{"error" => message}}}} =
+                 live(conn, "/puzzles/#{id}")
+
+        assert message =~ "doesn't exist"
+      end
+    end
+  end
+
   describe "Show" do
     setup do
       puzzle = puzzle_fixture()

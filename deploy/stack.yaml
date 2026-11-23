@@ -33,17 +33,36 @@ services:
       MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Subcipher}
     volumes:
       - uploads:/app/uploads
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-fsS",
+          "--max-time",
+          "3",
+          "http://localhost:4000/health",
+        ]
+      interval: 5s
+      timeout: 4s
+      retries: 3
+      start_period: 60s
+    stop_grace_period: 10s
     deploy:
       replicas: 1
       placement:
         constraints: [node.role == manager]
-      # Until the database is ready, the migrations fail and the app restarts.
       restart_policy:
         condition: any
         delay: 5s
       update_config:
-        order: stop-first
+        parallelism: 1
+        order: start-first
+        monitor: 30s
         failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        order: start-first
 
   db:
     image: postgres:17-alpine

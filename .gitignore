@@ -45,3 +45,7 @@ npm-debug.log
 
 # direnv
 /.direnv/
+
+# Deployment secrets
+.env
+/deploy/.env

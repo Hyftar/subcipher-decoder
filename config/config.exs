@@ -58,7 +58,7 @@ config :esbuild,
 
 # Configure tailwind (the version is required)
 config :tailwind,
-  version: System.get_env("MIX_TAILWIND_VERSION", "4.3.1"),
+  version: System.get_env("MIX_TAILWIND_VERSION", "4.3.5"),
   path: System.get_env("MIX_TAILWIND_PATH"),
   subcipher: [
     args: ~w(

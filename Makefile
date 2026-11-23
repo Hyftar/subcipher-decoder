@@ -10,7 +10,7 @@ else
 endif
 
 .DEFAULT_GOAL := help
-.PHONY: help setup start iex db-up db-down db-logs db-reset psql mail \
+.PHONY: help setup start iex db-up db-down db-logs db-reset psql mail deploy \
         test test-js precommit format assets fixtures clean
 
 help: ## Show this help
@@ -41,6 +41,9 @@ db-reset: db-up ## Drop, recreate, migrate and seed the dev database
 mail: ## Open the MailDev inbox (emails sent in development)
 	@echo "MailDev: http://localhost:$${MAILDEV_WEB_PORT:-1080}"
 	-@xdg-open "http://localhost:$${MAILDEV_WEB_PORT:-1080}" >/dev/null 2>&1
+
+deploy: ## Deploy or update the stack on the Docker Swarm (deploy/.env, see README)
+	./scripts/deploy.sh
 
 psql: db-up ## Open a psql shell on the dev database
 	$(RUN) 'psql postgres://postgres:postgres@localhost:$${POSTGRES_PORT:-5432}/subcipher_dev'

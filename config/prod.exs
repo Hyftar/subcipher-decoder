@@ -7,17 +7,10 @@ import Config
 # before starting your production server.
 config :subcipher, SubcipherWeb.Endpoint, cache_static_manifest: "priv/static/cache_manifest.json"
 
-# Force using SSL in production. This also sets the "strict-security-transport" header,
-# known as HSTS. If you have a health check endpoint, you may want to exclude it below.
-# Note `:force_ssl` is required to be set at compile-time.
-config :subcipher, SubcipherWeb.Endpoint,
-  force_ssl: [
-    rewrite_on: [:x_forwarded_proto],
-    exclude: [
-      # paths: ["/health"],
-      hosts: ["localhost", "127.0.0.1"]
-    ]
-  ]
+# HTTPS is left to the reverse proxy in front of the app (self-hosted: it
+# may also be reached over plain HTTP on the local network), so SSL isn't
+# forced here. Behind a proxy terminating HTTPS, set PHX_SCHEME=https and
+# PHX_URL_PORT=443 (config/runtime.exs) so links and LiveView origins match.
 
 # Do not print debug messages in production
 config :logger, level: :info

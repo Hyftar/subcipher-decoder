@@ -1,0 +1,67 @@
+# Subcipher on a Docker Swarm: the app and its PostgreSQL database.
+#
+# Deployed with scripts/deploy.sh (`make deploy`), which loads deploy/.env
+# (see .env.example) and runs `docker stack deploy`. The image is built by
+# GitHub Actions (.github/workflows/docker-image.yml) and pulled from GitHub's
+# registry by the swarm.
+#
+# Both services are pinned to the manager node: their data lives in local
+# volumes there (pgdata: the database, uploads: the pictures).
+
+services:
+  app:
+    image: ${SUBCIPHER_IMAGE:-ghcr.io/hyftar/subcipher-decoder:latest}
+    ports:
+      - "${APP_PORT:-4000}:4000"
+    environment:
+      DATABASE_URL: ecto://subcipher:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@db/subcipher
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?set SECRET_KEY_BASE in deploy/.env}
+      PHX_HOST: ${PHX_HOST:?set PHX_HOST in deploy/.env}
+      PHX_SCHEME: ${PHX_SCHEME:-http}
+      PHX_URL_PORT: ${PHX_URL_PORT:-4000}
+      PHX_CHECK_ORIGIN: ${PHX_CHECK_ORIGIN:-}
+      SMTP_HOST: ${SMTP_HOST:?set SMTP_HOST in deploy/.env}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_TLS: ${SMTP_TLS:-if_available}
+      SMTP_SSL: ${SMTP_SSL:-false}
+      MAIL_FROM: ${MAIL_FROM:?set MAIL_FROM in deploy/.env}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Subcipher}
+    volumes:
+      - uploads:/app/uploads
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      # Until the database is ready, the migrations fail and the app restarts.
+      restart_policy:
+        condition: any
+        delay: 5s
+      update_config:
+        order: stop-first
+        failure_action: rollback
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: subcipher
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: subcipher
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U subcipher -d subcipher"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: any
+
+volumes:
+  pgdata:
+  uploads:

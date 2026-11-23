@@ -244,6 +244,41 @@ The parameter form is generated from `fields/0`: `:integer` (an input, or a slid
 behaviour's contract automatically. `Subcipher.Steps.Alphabet` has helpers for letter-wise
 ciphers (`map_letters/2`, `english_score/1`).
 
+## Deploying (Docker Swarm)
+
+The production image is built from the `Dockerfile` (a Phoenix release) by GitHub Actions
+(`.github/workflows/docker-image.yml`) on every push to `main` and published to
+`ghcr.io/hyftar/subcipher-decoder` (`latest`, the commit SHA, and versions for `v*` tags).
+`deploy/stack.yaml` runs it on a Docker Swarm with PostgreSQL, both on the manager node
+(their data is in its `pgdata` and `uploads` volumes).
+
+Once:
+
+1. Push to `main` and wait for the "Docker image" workflow.
+2. Log in to GitHub's registry from your machine, so the swarm can pull the private image
+   (a token with `read:packages`): `docker login ghcr.io -u <github user>`. Or make the
+   package public (Package settings, Change visibility).
+3. Make the server reachable as a Docker context (over SSH; the user must be allowed to use
+   Docker on the server):
+   `docker context create subcipher-server --docker "host=ssh://<user>@192.168.1.50"`.
+   If the server isn't in a swarm yet: `docker --context subcipher-server swarm init`.
+4. `cp deploy/.env.example deploy/.env` and fill it in: `POSTGRES_PASSWORD`,
+   `SECRET_KEY_BASE` (`mix phx.gen.secret`), the SMTP settings and `MAIL_FROM`. It is set
+   up for `http://192.168.1.50:4000`.
+
+Then `make deploy` (`scripts/deploy.sh`) to deploy, and again to update after a new image
+is published: it loads `deploy/.env`, and runs `docker stack deploy` on the
+`subcipher-server` context (`DEPLOY_CONTEXT` to change it), pulling the latest image. The
+app runs its migrations on start (it restarts until the database is ready). Follow it with
+`docker --context subcipher-server service logs -f subcipher_app`.
+
+HTTPS can come from a reverse proxy in front of the app (forwarding WebSockets for
+LiveView): set `PHX_HOST` to its domain with `PHX_SCHEME=https` and `PHX_URL_PORT=443`.
+Every other address the app is opened with must be listed in `PHX_CHECK_ORIGIN`, or live
+updates are refused.
+
+Accounts start empty: register the first one with your email.
+
 ## Tests
 
 ```sh

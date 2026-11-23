@@ -27,6 +27,10 @@ defmodule SubcipherWeb.Endpoint do
     only: SubcipherWeb.static_paths(),
     raise_on_missing_only: code_reloading?
 
+  # Uploaded cipher pictures, from the uploads directory (`UPLOADS_DIR` in
+  # production, a volume; priv/static/uploads otherwise).
+  plug Plug.Static, at: "/uploads", from: {Subcipher.Ciphers, :uploads_dir, []}
+
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.
   if code_reloading? do

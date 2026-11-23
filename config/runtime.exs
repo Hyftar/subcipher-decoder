@@ -131,12 +131,35 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
-  host = System.get_env("PHX_HOST") || "example.com"
+  # The address people use (links in emails, LiveView's allowed origins):
+  # PHX_HOST, and PHX_SCHEME / PHX_URL_PORT as seen by the browser (behind an
+  # HTTPS reverse proxy: https / 443). PHX_CHECK_ORIGIN lists other allowed
+  # origins (comma separated, e.g. "//192.168.1.10:4000"), or "false".
+  host = System.get_env("PHX_HOST") || "localhost"
+  scheme = System.get_env("PHX_SCHEME", "https")
+
+  url_port =
+    String.to_integer(
+      System.get_env("PHX_URL_PORT", if(scheme == "https", do: "443", else: "80"))
+    )
+
+  check_origin =
+    case System.get_env("PHX_CHECK_ORIGIN") do
+      nil -> true
+      "false" -> false
+      origins -> ["//#{host}" | String.split(origins, ",", trim: true)]
+    end
+
+  # Uploaded pictures: a directory kept across updates (a Docker volume).
+  if uploads_dir = System.get_env("UPLOADS_DIR") do
+    config :subcipher, :uploads_dir, uploads_dir
+  end
 
   config :subcipher, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
   config :subcipher, SubcipherWeb.Endpoint,
-    url: [host: host, port: 443, scheme: "https"],
+    url: [host: host, port: url_port, scheme: scheme],
+    check_origin: check_origin,
     http: [
       # Enable IPv6 and bind on all interfaces.
       # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.

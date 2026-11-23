@@ -1,10 +1,13 @@
 defmodule Subcipher.Algorithms do
   @moduledoc """
-  Algorithms: puzzles turned into ciphers usable on any text.
+  Algorithms: ciphers usable on any text.
 
-  An algorithm keeps a frozen copy of a puzzle's steps (cipher types and
-  settings) and, for a pictures puzzle, its symbol key: a sample glyph for
-  each letter, cropped from copies of the pictures. It can then
+  An algorithm has steps (cipher types and settings), created from scratch
+  (`create_algorithm/2`, a text algorithm) or copied from a puzzle
+  (`create_from_puzzle/1`; later changes to either don't affect the other),
+  and editable (`add_step/2`, `update_step_params/3`...; only ciphers that can
+  encode). One made from a pictures puzzle also has its symbol key: a sample
+  glyph for each letter, cropped from copies of the pictures. It can then
 
     * decode any cipher text, step 1 to the last (`decode/2`);
     * encode any plain text, the last step to step 1, with each cipher's
@@ -83,6 +86,118 @@ defmodule Subcipher.Algorithms do
       problems ->
         {:error, problems}
     end
+  end
+
+  @doc "The ciphers an algorithm can use: those that can encode."
+  def ciphers, do: Enum.filter(Steps.ciphers(), &Steps.implements?(&1, :encode, 2))
+
+  @doc """
+  Creates a text algorithm from scratch, starting with one step of cipher
+  `type` (default settings), not attached to any puzzle.
+  """
+  def create_algorithm(type, title \\ "New algorithm") do
+    with {:ok, step} <- new_step(type) do
+      Repo.insert(%Algorithm{title: title, input_kind: "text", steps: [step]})
+    end
+  end
+
+  ## Editing (the steps are numbered from 0 here, in decoding order)
+
+  def rename(%Algorithm{} = algorithm, title) do
+    case String.trim(title || "") do
+      "" -> {:error, :blank}
+      title -> update_steps(algorithm, algorithm.steps, title: String.slice(title, 0, 120))
+    end
+  end
+
+  @doc "Appends a step of cipher `type`, with default settings."
+  def add_step(%Algorithm{} = algorithm, type) do
+    with {:ok, step} <- new_step(type) do
+      update_steps(algorithm, algorithm.steps ++ [step])
+    end
+  end
+
+  @doc "Changes the cipher of step `index`; its settings are reset."
+  def change_step_type(%Algorithm{} = algorithm, index, type) do
+    with {:ok, step} <- new_step(type),
+         true <- index in 0..(length(algorithm.steps) - 1)//1 || {:error, :not_found} do
+      update_steps(algorithm, List.replace_at(algorithm.steps, index, step))
+    end
+  end
+
+  @doc """
+  Updates some of the settings of step `index` (the others are kept).
+  Returns `{:error, changeset}` when they are invalid.
+  """
+  def update_step_params(%Algorithm{} = algorithm, index, params) do
+    case Enum.at(algorithm.steps, index) do
+      nil ->
+        {:error, :not_found}
+
+      %{"type" => type, "params" => current} = step ->
+        params = Map.new(params, fn {k, v} -> {to_string(k), v} end)
+        changeset = Steps.params_changeset(type, Map.merge(current, params))
+
+        if changeset.valid? do
+          params =
+            changeset
+            |> Ecto.Changeset.apply_changes()
+            |> Map.new(fn {k, v} -> {to_string(k), v} end)
+
+          update_steps(
+            algorithm,
+            List.replace_at(algorithm.steps, index, %{step | "params" => params})
+          )
+        else
+          {:error, %{changeset | action: :validate}}
+        end
+    end
+  end
+
+  @doc "Removes step `index`. A text algorithm keeps at least one step."
+  def delete_step(%Algorithm{} = algorithm, index) do
+    cond do
+      index not in 0..(length(algorithm.steps) - 1)//1 -> {:error, :not_found}
+      length(algorithm.steps) == 1 and not Algorithm.pictures?(algorithm) -> {:error, :last_step}
+      true -> update_steps(algorithm, List.delete_at(algorithm.steps, index))
+    end
+  end
+
+  @doc "Moves step `index` one place earlier (`:up`) or later (`:down`)."
+  def move_step(%Algorithm{} = algorithm, index, direction) when direction in [:up, :down] do
+    target = if direction == :up, do: index - 1, else: index + 1
+    steps = algorithm.steps
+
+    if index in 0..(length(steps) - 1)//1 and target in 0..(length(steps) - 1)//1 do
+      steps =
+        steps
+        |> List.replace_at(index, Enum.at(steps, target))
+        |> List.replace_at(target, Enum.at(steps, index))
+
+      update_steps(algorithm, steps)
+    else
+      {:ok, algorithm}
+    end
+  end
+
+  defp new_step(type) do
+    with {:ok, cipher} <- Steps.fetch_cipher(type),
+         true <- cipher in ciphers() || {:error, :not_reversible} do
+      params =
+        cipher.fields()
+        |> Map.new(&{to_string(&1.name), &1.default})
+
+      {:ok, %{"type" => cipher.type(), "params" => params}}
+    else
+      :error -> {:error, :unknown_cipher}
+      error -> error
+    end
+  end
+
+  defp update_steps(algorithm, steps, changes \\ []) do
+    algorithm
+    |> Ecto.Changeset.change([steps: steps] ++ changes)
+    |> Repo.update()
   end
 
   def delete_algorithm(%Algorithm{} = algorithm) do

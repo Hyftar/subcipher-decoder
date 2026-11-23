@@ -1,7 +1,8 @@
 defmodule Subcipher.Algorithms.Algorithm do
   @moduledoc """
-  A puzzle turned into an algorithm: its decoding steps with their settings,
-  frozen, usable to encode and decode any text (see `Subcipher.Algorithms`).
+  Cipher steps with their settings, usable to encode and decode any text
+  (see `Subcipher.Algorithms`). Made from a puzzle (a copy of its steps,
+  `source_puzzle_id`) or from scratch, and editable.
   """
   use Ecto.Schema
 

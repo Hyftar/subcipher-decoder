@@ -855,7 +855,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
             id="make-algorithm"
             class="btn btn-sm btn-soft btn-primary"
             phx-click="make_algorithm"
-            title="Freeze these steps into an algorithm to encode and decode any text"
+            title="Copy these steps into an algorithm to encode and decode any text"
           >
             <.icon name="hero-cog-6-tooth" class="size-4" /> Make an algorithm
           </button>

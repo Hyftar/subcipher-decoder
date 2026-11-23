@@ -14,6 +14,7 @@ defmodule SubcipherWeb.PuzzleLive.Index do
      |> assign(:page_title, "Puzzles")
      |> assign(:text_form, to_form(Ciphers.change_text_puzzle()))
      |> assign(:puzzles, Ciphers.list_puzzles())
+     |> assign(:new_algorithm, false)
      |> assign(:algorithms, Subcipher.Algorithms.list_algorithms())}
   end
 
@@ -38,6 +39,21 @@ defmodule SubcipherWeb.PuzzleLive.Index do
   end
 
   @impl true
+  def handle_event("toggle_new_algorithm", _params, socket) do
+    {:noreply, update(socket, :new_algorithm, &(!&1))}
+  end
+
+  # A new algorithm opens in its editor.
+  def handle_event("create_algorithm", %{"type" => type}, socket) do
+    case Subcipher.Algorithms.create_algorithm(type) do
+      {:ok, algorithm} ->
+        {:noreply, push_navigate(socket, to: ~p"/algorithms/#{algorithm}?edit=true")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "This cipher can't be used in an algorithm.")}
+    end
+  end
+
   def handle_event("choose_cipher", %{"type" => type}, socket) do
     {:noreply, push_patch(socket, to: ~p"/?cipher=#{type}")}
   end
@@ -215,10 +231,33 @@ defmodule SubcipherWeb.PuzzleLive.Index do
             </li>
           </ul>
 
-          <h2 class="pt-4 font-semibold text-base-content/80">Your algorithms</h2>
-          <p :if={@algorithms == []} class="text-sm text-base-content/60">
-            None yet: on a puzzle, "Make an algorithm" freezes its steps to encode and decode
-            any text.
+          <div class="flex items-center justify-between gap-2 pt-4">
+            <h2 class="font-semibold text-base-content/80">Your algorithms</h2>
+            <button
+              type="button"
+              id="new-algorithm"
+              class={["btn btn-sm", if(@new_algorithm, do: "btn-active", else: "btn-ghost")]}
+              phx-click="toggle_new_algorithm"
+              aria-expanded={to_string(@new_algorithm)}
+            >
+              <.icon name="hero-plus" class="size-4" /> New
+            </button>
+          </div>
+          <div :if={@new_algorithm} id="new-algorithm-panel" class="space-y-2">
+            <p class="text-sm text-base-content/60">
+              Its first step (more can be added after):
+            </p>
+            <.cipher_grid
+              id_prefix="new-algorithm-"
+              event="create_algorithm"
+              icon="hero-plus-circle"
+              class="grid-cols-1"
+              ciphers={Subcipher.Algorithms.ciphers()}
+            />
+          </div>
+          <p :if={@algorithms == [] and !@new_algorithm} class="text-sm text-base-content/60">
+            None yet: create one with <strong>New</strong>, or on a puzzle, "Make an algorithm"
+            turns its steps into one, to encode and decode any text.
           </p>
           <ul id="algorithms" class="space-y-2">
             <li :for={algorithm <- @algorithms} id={"algorithm-#{algorithm.id}"}>

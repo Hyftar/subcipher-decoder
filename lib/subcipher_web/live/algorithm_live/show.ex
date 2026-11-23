@@ -1,7 +1,7 @@
 defmodule SubcipherWeb.AlgorithmLive.Show do
   @moduledoc """
-  An algorithm (a frozen puzzle): encode or decode any text with its steps,
-  showing the text after each step.
+  An algorithm: encode or decode any text with its steps, showing the text
+  after each step; its steps can be edited.
   """
   use SubcipherWeb, :live_view
 
@@ -9,7 +9,7 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
   alias Subcipher.Algorithms.Algorithm
   alias Subcipher.Steps.Step
 
-  import SubcipherWeb.StepComponents, only: [output: 1]
+  import SubcipherWeb.StepComponents, only: [output: 1, param_field: 1, cipher_grid: 1]
 
   # Height (px) of the symbols drawn from the symbol key.
   @symbol_height 36
@@ -33,6 +33,9 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
     |> assign(:page_title, algorithm.title)
     |> assign(:algorithm, algorithm)
     |> assign(:steps, describe_steps(algorithm))
+    # Editing the steps; invalid settings forms being edited, by step index.
+    |> assign(:editing, false)
+    |> assign(:step_forms, %{})
     |> assign(:mode, "encode")
     # What the user typed, per mode (kept when switching).
     |> assign(:texts, %{"encode" => "", "decode" => ""})
@@ -55,10 +58,13 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
   @impl true
   def handle_params(params, _uri, socket) do
     mode = if params["mode"] in ~w(encode decode), do: params["mode"], else: "encode"
-    {:noreply, socket |> assign(:mode, mode) |> assign_trace()}
+    # ?edit=true opens the editor (a new algorithm starts there).
+    editing = socket.assigns.editing or params["edit"] == "true"
+
+    {:noreply, socket |> assign(:mode, mode) |> assign(:editing, editing) |> assign_trace()}
   end
 
-  # The frozen steps, for display: number, cipher name and its settings.
+  # The steps, for display: number, cipher name and its settings.
   defp describe_steps(algorithm) do
     pictures =
       if Algorithm.pictures?(algorithm),
@@ -107,6 +113,54 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
     |> case do
       "" -> "No settings"
       text -> text
+    end
+  end
+
+  # After a change of steps (indexes shift: forms being edited are dropped).
+  defp after_edit({:ok, algorithm}, socket),
+    do: {:noreply, socket |> assign(:step_forms, %{}) |> reload(algorithm)}
+
+  defp after_edit({:error, :last_step}, socket),
+    do: {:noreply, put_flash(socket, :error, "An algorithm needs at least one step.")}
+
+  defp after_edit({:error, _}, socket),
+    do: {:noreply, put_flash(socket, :error, "This change isn't possible.")}
+
+  defp reload(socket, algorithm) do
+    socket
+    |> assign(:algorithm, algorithm)
+    |> assign(:page_title, algorithm.title)
+    |> assign(:steps, describe_steps(algorithm))
+    |> assign_trace()
+  end
+
+  # What the editor shows for each stored step: its cipher, settings form
+  # and the text it decodes (from the decode trace, so settings that depend
+  # on the input, like the symbols of a symbol substitution, can be set).
+  defp editor_steps(assigns) do
+    %{algorithm: algorithm, texts: texts, symbols: symbols, step_forms: forms} = assigns
+
+    {inputs, offset} =
+      if Algorithm.pictures?(algorithm),
+        do: {Algorithms.decode(algorithm, symbols), 1},
+        else: {Algorithms.decode(algorithm, texts["decode"]), 0}
+
+    for {%{"type" => type, "params" => params}, index} <- Enum.with_index(algorithm.steps) do
+      step = %Step{type: type, params: params}
+
+      %{
+        index: index,
+        number: index + offset + 1,
+        cipher: Steps.cipher!(type),
+        params: Steps.params(step),
+        input: Enum.at(inputs, index + offset).value,
+        form:
+          forms[index] ||
+            to_form(Steps.params_changeset(type, params),
+              as: :step,
+              id: "algorithm-step-form-#{index}"
+            )
+      }
     end
   end
 
@@ -196,6 +250,58 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
     {:noreply, assign(socket, :detected, detected)}
   end
 
+  ## Editing
+
+  def handle_event("toggle_edit", _params, socket) do
+    {:noreply, socket |> update(:editing, &(!&1)) |> assign(:step_forms, %{})}
+  end
+
+  def handle_event("rename", %{"title" => title}, socket) do
+    case Algorithms.rename(socket.assigns.algorithm, title) do
+      {:ok, algorithm} -> {:noreply, reload(socket, algorithm)}
+      {:error, _} -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("add_step", %{"type" => type}, socket) do
+    socket.assigns.algorithm |> Algorithms.add_step(type) |> after_edit(socket)
+  end
+
+  def handle_event("change_step_type", %{"index" => index, "type" => type}, socket) do
+    socket.assigns.algorithm
+    |> Algorithms.change_step_type(String.to_integer(index), type)
+    |> after_edit(socket)
+  end
+
+  def handle_event("update_step", %{"index" => index} = params, socket) do
+    index = String.to_integer(index)
+
+    case Algorithms.update_step_params(socket.assigns.algorithm, index, params["step"] || %{}) do
+      {:ok, algorithm} ->
+        {:noreply, socket |> update(:step_forms, &Map.delete(&1, index)) |> reload(algorithm)}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        form = to_form(changeset, as: :step, id: "algorithm-step-form-#{index}")
+        {:noreply, update(socket, :step_forms, &Map.put(&1, index, form))}
+
+      {:error, _} ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("move_step", %{"index" => index, "direction" => direction}, socket)
+      when direction in ~w(up down) do
+    socket.assigns.algorithm
+    |> Algorithms.move_step(String.to_integer(index), String.to_existing_atom(direction))
+    |> after_edit(socket)
+  end
+
+  def handle_event("delete_step", %{"index" => index}, socket) do
+    socket.assigns.algorithm
+    |> Algorithms.delete_step(String.to_integer(index))
+    |> after_edit(socket)
+  end
+
   def handle_event("delete", _params, socket) do
     {:ok, _} = Algorithms.delete_algorithm(socket.assigns.algorithm)
 
@@ -228,7 +334,25 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
           </.link>
           <div class="flex-1 min-w-48">
             <p class="text-xs font-semibold uppercase tracking-wider text-primary">Algorithm</p>
-            <h1 class="text-2xl font-bold tracking-tight">{@algorithm.title}</h1>
+            <form
+              :if={@editing}
+              id="title-form"
+              phx-submit="rename"
+              phx-change="rename"
+              class="mt-0.5"
+            >
+              <input
+                type="text"
+                id="algorithm-title"
+                name="title"
+                value={@algorithm.title}
+                phx-debounce="500"
+                maxlength="120"
+                aria-label="Title"
+                class="input input-ghost w-full -ml-3 px-3 text-2xl font-bold tracking-tight focus:bg-base-200/60"
+              />
+            </form>
+            <h1 :if={!@editing} class="text-2xl font-bold tracking-tight">{@algorithm.title}</h1>
           </div>
           <.link
             :if={@algorithm.source_puzzle_id}
@@ -249,12 +373,26 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
           </button>
         </div>
 
+        <.steps_editor
+          :if={@editing}
+          algorithm={@algorithm}
+          steps={editor_steps(assigns)}
+        />
         <section
+          :if={!@editing}
           id="algorithm-steps"
           class="rounded-2xl border border-base-300 bg-base-100 p-4 sm:p-6 space-y-3"
         >
-          <h2 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            <.icon name="hero-lock-closed" class="size-4" /> Steps (fixed)
+          <h2 class="flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wider text-base-content/50">
+            Steps
+            <button
+              type="button"
+              id="edit-algorithm"
+              class="btn btn-ghost btn-xs normal-case tracking-normal"
+              phx-click="toggle_edit"
+            >
+              <.icon name="hero-pencil-square" class="size-4" /> Edit
+            </button>
           </h2>
           <ol class="flex flex-wrap items-stretch gap-2">
             <li
@@ -513,6 +651,162 @@ defmodule SubcipherWeb.AlgorithmLive.Show do
 
     ~H"""
     <span class="block bg-no-repeat rounded-sm" style={@style} aria-hidden="true"></span>
+    """
+  end
+
+  attr :algorithm, :any, required: true
+  attr :steps, :list, required: true, doc: "see editor_steps/1"
+
+  # The steps, editable: cipher, settings, order; and adding a step. Only
+  # ciphers that can encode are offered. A pictures algorithm's symbol key
+  # (step 1) comes from its puzzle and isn't edited here.
+  defp steps_editor(assigns) do
+    assigns = assign(assigns, :ciphers, Algorithms.ciphers())
+
+    ~H"""
+    <section id="steps-editor" class="space-y-4">
+      <div class="flex items-center justify-between gap-2">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/50">
+          Steps · decoding order
+        </h2>
+        <button
+          type="button"
+          id="done-editing"
+          class="btn btn-primary btn-sm"
+          phx-click="toggle_edit"
+        >
+          <.icon name="hero-check" class="size-4" /> Done
+        </button>
+      </div>
+
+      <div
+        :if={Algorithm.pictures?(@algorithm)}
+        id="editor-step-symbols"
+        class="flex items-center gap-3 rounded-2xl border border-dashed border-base-300 bg-base-100 p-4"
+      >
+        <span class="grid place-items-center size-8 rounded-full bg-base-200 text-sm font-semibold">
+          1
+        </span>
+        <div>
+          <p class="font-semibold">Symbol substitution</p>
+          <p class="text-sm text-base-content/60">
+            {length(@algorithm.symbol_key)} symbols in the key, from the puzzle's pictures.
+          </p>
+        </div>
+      </div>
+
+      <section
+        :for={step <- @steps}
+        id={"editor-step-#{step.index}"}
+        class="rounded-2xl border border-base-300 bg-base-100 p-4 sm:p-6 space-y-4 transition-shadow hover:shadow-sm"
+      >
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="grid place-items-center size-8 rounded-full bg-primary text-primary-content text-sm font-semibold">
+            {step.number}
+          </span>
+          <form
+            id={"editor-step-type-#{step.index}"}
+            phx-change="change_step_type"
+            class="flex-1 min-w-48"
+          >
+            <input type="hidden" name="index" value={step.index} />
+            <select
+              id={"editor-step-cipher-#{step.index}"}
+              name="type"
+              class="select select-sm font-semibold w-auto"
+              aria-label="Cipher"
+              title="Changing the cipher resets the settings of this step"
+            >
+              <option
+                :for={cipher <- @ciphers}
+                value={cipher.type()}
+                selected={cipher == step.cipher}
+              >
+                {cipher.name()}
+              </option>
+            </select>
+          </form>
+          <div class="flex items-center">
+            <button
+              :for={
+                {direction, icon, label, enabled} <- [
+                  {"up", "hero-arrow-up", "Move earlier", step.index > 0},
+                  {"down", "hero-arrow-down", "Move later", step.index < length(@steps) - 1}
+                ]
+              }
+              type="button"
+              id={"editor-move-#{direction}-#{step.index}"}
+              class="btn btn-ghost btn-sm btn-square"
+              phx-click="move_step"
+              phx-value-index={step.index}
+              phx-value-direction={direction}
+              disabled={!enabled}
+              aria-label={label}
+              title={label}
+            >
+              <.icon name={icon} class="size-4" />
+            </button>
+            <button
+              type="button"
+              id={"editor-delete-#{step.index}"}
+              class="btn btn-ghost btn-sm btn-square"
+              phx-click="delete_step"
+              phx-value-index={step.index}
+              disabled={length(@steps) == 1 and not Algorithm.pictures?(@algorithm)}
+              data-confirm={"Remove step #{step.number} (#{step.cipher.name()})?"}
+              aria-label="Remove step"
+              title="Remove step"
+            >
+              <.icon name="hero-trash" class="size-4" />
+            </button>
+          </div>
+        </div>
+        <p class="-mt-2 text-sm text-base-content/60">{step.cipher.description()}</p>
+
+        <.form
+          :if={step.cipher.fields() != []}
+          for={step.form}
+          id={"editor-step-form-#{step.index}"}
+          phx-change="update_step"
+          phx-submit="update_step"
+          class="space-y-2"
+        >
+          <input type="hidden" name="index" value={step.index} />
+          <.param_field
+            :for={field <- step.cipher.fields()}
+            field={field}
+            form_field={step.form[field.name]}
+            step_id={step.index}
+            input={step.input}
+            params={step.params}
+          />
+        </.form>
+        <p :if={step.cipher.fields() == []} class="text-sm text-base-content/50 italic">
+          No settings.
+        </p>
+      </section>
+
+      <details
+        id="editor-add-step"
+        class="group rounded-2xl border border-dashed border-base-300 bg-base-100/50 p-4"
+      >
+        <summary class="flex cursor-pointer list-none items-center gap-2 font-semibold text-base-content/70 hover:text-primary transition-colors">
+          <.icon name="hero-plus-circle" class="size-5" /> Add a step
+          <.icon
+            name="hero-chevron-down"
+            class="ml-auto size-4 transition-transform group-open:rotate-180"
+          />
+        </summary>
+        <div class="mt-4">
+          <.cipher_grid
+            id_prefix="editor-add-"
+            event="add_step"
+            icon="hero-plus-circle"
+            ciphers={@ciphers}
+          />
+        </div>
+      </details>
+    </section>
     """
   end
 

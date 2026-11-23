@@ -182,4 +182,46 @@ defmodule SubcipherWeb.AlgorithmLiveTest do
       assert message =~ "doesn't exist"
     end
   end
+
+  test "created from the home page, then edited", %{conn: conn} do
+    {:ok, home, _} = live(conn, ~p"/")
+    home |> element("#new-algorithm") |> render_click()
+    refute has_element?(home, "#new-algorithm-anagram")
+
+    {:error, {:live_redirect, %{to: to}}} =
+      home |> element("#new-algorithm-caesar") |> render_click()
+
+    [algorithm] = Algorithms.list_algorithms()
+    assert to == "/algorithms/#{algorithm.id}?edit=true"
+    assert algorithm.source_puzzle_id == nil
+
+    {:ok, view, _} = live(conn, to)
+    assert has_element?(view, "#steps-editor")
+
+    view |> form("#title-form", %{title: "My cipher"}) |> render_change()
+    view |> form("#editor-step-form-0", %{index: "0", step: %{shift: "3"}}) |> render_change()
+    view |> element("#editor-add-atbash") |> render_click()
+
+    assert has_element?(
+             view,
+             "#editor-step-1 #editor-step-cipher-1 option[selected][value=atbash]"
+           )
+
+    view |> element("#editor-move-up-1") |> render_click()
+    assert has_element?(view, "#editor-step-0 option[selected][value=atbash]")
+    view |> element("#editor-delete-0") |> render_click()
+
+    # Invalid settings are shown, not saved.
+    view |> form("#editor-step-form-0", %{index: "0", step: %{shift: ""}}) |> render_change()
+    assert has_element?(view, "#editor-step-form-0 .text-error")
+
+    algorithm = Algorithms.get_algorithm!(algorithm.id)
+    assert algorithm.title == "My cipher"
+    assert [%{"type" => "caesar", "params" => %{"shift" => 3}}] = algorithm.steps
+
+    view |> element("#done-editing") |> render_click()
+    refute has_element?(view, "#steps-editor")
+    view |> form("#text-form", %{text: "Hello"}) |> render_change()
+    assert view |> element("#stage-text-1") |> render() =~ "Khoor"
+  end
 end

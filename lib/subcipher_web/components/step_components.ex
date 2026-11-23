@@ -107,13 +107,14 @@ defmodule SubcipherWeb.StepComponents do
   attr :event, :string, required: true, doc: "clicked with phx-value-type"
   attr :icon, :string, default: "hero-arrow-right-circle"
   attr :class, :string, default: "sm:grid-cols-2"
+  attr :ciphers, :list, default: nil, doc: "the ciphers offered (default: all)"
 
   @doc "Every cipher type as a card; clicking one sends `event` with its type."
   def cipher_grid(assigns) do
     ~H"""
     <div class={["grid gap-3", @class]}>
       <button
-        :for={cipher <- Steps.ciphers()}
+        :for={cipher <- @ciphers || Steps.ciphers()}
         type="button"
         id={@id_prefix <> cipher.type()}
         phx-click={@event}
@@ -456,7 +457,7 @@ defmodule SubcipherWeb.StepComponents do
   attr :params, :map, default: %{}, doc: "the step's current (valid) parameters"
 
   # A slider; its maximum can depend on the step's input.
-  defp param_field(%{field: %{type: :integer, control: :range}} = assigns) do
+  def param_field(%{field: %{type: :integer, control: :range}} = assigns) do
     %{field: field, input: input} = assigns
     max = if is_function(field[:max], 1), do: field.max.(input), else: field[:max]
 
@@ -498,7 +499,7 @@ defmodule SubcipherWeb.StepComponents do
     """
   end
 
-  defp param_field(%{field: %{type: :integer}} = assigns) do
+  def param_field(%{field: %{type: :integer}} = assigns) do
     ~H"""
     <div class="max-w-xs">
       <.input
@@ -514,7 +515,7 @@ defmodule SubcipherWeb.StepComponents do
     """
   end
 
-  defp param_field(%{field: %{type: :string}} = assigns) do
+  def param_field(%{field: %{type: :string}} = assigns) do
     ~H"""
     <div class="max-w-sm">
       <.input field={@form_field} type="text" label={@field.label} phx-debounce="300" />
@@ -523,7 +524,7 @@ defmodule SubcipherWeb.StepComponents do
     """
   end
 
-  defp param_field(%{field: %{type: :select}} = assigns) do
+  def param_field(%{field: %{type: :select}} = assigns) do
     ~H"""
     <div class="max-w-sm">
       <.input field={@form_field} type="select" label={@field.label} options={@field.options} />
@@ -535,7 +536,7 @@ defmodule SubcipherWeb.StepComponents do
   # The input's characters as tiles, in the current order. Reordered by drag
   # and drop, by tapping two tiles, or with ←/→ on a focused tile (see the
   # AnagramTiles hook, which sends the new order as "update_step").
-  defp param_field(%{field: %{type: :permutation}} = assigns) do
+  def param_field(%{field: %{type: :permutation}} = assigns) do
     tiles = Anagram.tiles(assigns.input, assigns.params[:spaces])
     order = Anagram.resolve_order(assigns.form_field.value, length(tiles))
     tiles = List.to_tuple(tiles)
@@ -593,7 +594,7 @@ defmodule SubcipherWeb.StepComponents do
 
   # One small input per cipher letter, with how often it appears in the
   # step's input as a hint.
-  defp param_field(%{field: %{type: :letter_map}} = assigns) do
+  def param_field(%{field: %{type: :letter_map}} = assigns) do
     assigns =
       assign(assigns,
         mapping: assigns.form_field.value || %{},
@@ -640,7 +641,7 @@ defmodule SubcipherWeb.StepComponents do
 
   # One input per distinct character of the step's input, most frequent
   # first.
-  defp param_field(%{field: %{type: :symbol_map}} = assigns) do
+  def param_field(%{field: %{type: :symbol_map}} = assigns) do
     assigns =
       assign(assigns,
         mapping: assigns.form_field.value || %{},

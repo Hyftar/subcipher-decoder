@@ -79,6 +79,55 @@ defmodule Subcipher.AlgorithmsTest do
     assert ["No symbol has a letter yet" <> _] = Algorithms.problems(puzzle_fixture())
   end
 
+  describe "creating and editing" do
+    test "an algorithm made from scratch, edited step by step" do
+      assert {:error, :not_reversible} = Algorithms.create_algorithm("anagram")
+      assert {:error, :unknown_cipher} = Algorithms.create_algorithm("nope")
+
+      {:ok, algorithm} = Algorithms.create_algorithm("caesar")
+      assert algorithm.source_puzzle_id == nil and algorithm.input_kind == "text"
+      assert [%{"type" => "caesar"}] = algorithm.steps
+
+      {:ok, algorithm} = Algorithms.update_step_params(algorithm, 0, %{"shift" => "3"})
+      assert final(Algorithms.decode(algorithm, "KHOOR")) == "HELLO"
+
+      assert {:error, %Ecto.Changeset{}} =
+               Algorithms.update_step_params(algorithm, 0, %{"shift" => "x"})
+
+      {:ok, algorithm} = Algorithms.add_step(algorithm, "reverse")
+      {:ok, algorithm} = Algorithms.add_step(algorithm, "atbash")
+      assert {:error, :not_reversible} = Algorithms.add_step(algorithm, "anagram")
+      assert Enum.map(algorithm.steps, & &1["type"]) == ~w(caesar reverse atbash)
+
+      {:ok, algorithm} = Algorithms.move_step(algorithm, 2, :up)
+      assert Enum.map(algorithm.steps, & &1["type"]) == ~w(caesar atbash reverse)
+      {:ok, algorithm} = Algorithms.change_step_type(algorithm, 1, "vigenere")
+      assert %{"type" => "vigenere", "params" => %{"key" => _}} = Enum.at(algorithm.steps, 1)
+
+      {:ok, algorithm} = Algorithms.delete_step(algorithm, 2)
+      {:ok, algorithm} = Algorithms.delete_step(algorithm, 1)
+      assert {:error, :last_step} = Algorithms.delete_step(algorithm, 0)
+
+      {:ok, algorithm} = Algorithms.rename(algorithm, "  Mine ")
+      assert algorithm.title == "Mine"
+      assert {:error, :blank} = Algorithms.rename(algorithm, " ")
+
+      # Still encodes and decodes after the edits.
+      text = final(Algorithms.encode(algorithm, "Attack at dawn"))
+      assert final(Algorithms.decode(algorithm, text)) == "Attack at dawn"
+    end
+
+    test "one made from a puzzle can be edited without changing the puzzle" do
+      puzzle = text_puzzle([])
+      {:ok, algorithm} = Algorithms.create_from_puzzle(puzzle)
+      {:ok, algorithm} = Algorithms.add_step(algorithm, "atbash")
+
+      assert length(algorithm.steps) == 2
+      assert length(Ciphers.get_puzzle!(puzzle.id).steps) == 1
+      assert algorithm.source_puzzle_id == puzzle.id
+    end
+  end
+
   describe "pictures" do
     test "the symbol key turns text into symbols and back" do
       puzzle = solved_pictures_puzzle()

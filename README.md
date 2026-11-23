@@ -116,8 +116,10 @@ names, so they don't suggest. The symbols of pictures (step 1) get a frequency m
 
 ### Algorithms
 
-**Make an algorithm** on a puzzle freezes its steps and settings into an algorithm that can
-encode and decode any text (`/algorithms/:id`, listed on the home page):
+An algorithm encodes and decodes any text with a chain of ciphers (`/algorithms/:id`,
+listed on the home page). Create one with **New** next to "Your algorithms" on the home
+page (a text algorithm: pick its first cipher), or with **Make an algorithm** on a puzzle,
+which copies its steps and settings (later changes to either don't affect the other):
 
 * an **Encode** / **Decode** switch, and the text after each step, from input to result;
 * encoding runs the steps backwards with each cipher's `encode/2`. Every cipher has one
@@ -137,7 +139,11 @@ encode and decode any text (`/algorithms/:id`, listed on the home page):
   the glyphs in one colour (detected: the median of their ink, or chosen) on a plain
   background or a transparent one.
 
-Its settings can't be changed: edit the puzzle and make a new algorithm instead.
+**Edit** on an algorithm changes its title and steps: the cipher and settings of each
+step, their order, adding and removing steps (only ciphers that can encode are offered).
+Settings that depend on the text, like the symbols of a symbol substitution, are taken
+from the text in **Decode** mode. The symbol key of a pictures algorithm comes from its
+puzzle and isn't edited.
 
 ### Solver
 

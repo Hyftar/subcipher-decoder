@@ -100,11 +100,10 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
       step = add_step(view, puzzle, "caesar")
       view |> form("#step-form-#{step.id}", step: %{shift: "0"}) |> render_change()
 
-      # Hidden until asked for (they can spoil the puzzle), then each with
-      # the reason it is suggested.
-      assert has_element?(view, "#suggestions-#{step.id}")
-      refute has_element?(view, "#suggestion-#{step.id}-0")
-      view |> element("#toggle-suggestions-#{step.id}") |> render_click()
+      # In a collapsed accordion (they can spoil the puzzle), each with the
+      # reason it is suggested.
+      assert has_element?(view, "#suggestions-#{step.id}-toggle[aria-expanded=false]")
+      assert has_element?(view, "#suggestions-#{step.id}-content.hidden #suggestion-#{step.id}-0")
       assert has_element?(view, "#suggestion-#{step.id}-0", "Shift 3")
       assert has_element?(view, "#suggestion-#{step.id}-0", "closest to English")
       assert has_element?(view, "#suggestion-#{step.id}-0", "THE QUICK BROWN FOX")

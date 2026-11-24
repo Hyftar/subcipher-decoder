@@ -1,9 +1,8 @@
 defmodule SubcipherWeb.PuzzleLive.Events.Suggestion do
   @moduledoc """
-  Events of the suggestions and solvers: showing suggestions (hidden until
-  asked for), solving, and applying a suggestion or a solution.
+  Events of the suggestions and solvers: solving, and applying a suggestion
+  or a solution. (Showing them is client-side: `SubcipherWeb.Components.Accordion`.)
   """
-  import Phoenix.Component, only: [update: 3]
   import Subcipher.Util, only: [wrap: 2]
 
   alias Subcipher.{Ciphers, Steps}
@@ -53,16 +52,5 @@ defmodule SubcipherWeb.PuzzleLive.Events.Suggestion do
     else
       wrap(socket, :noreply)
     end
-  end
-
-  def handle_event("toggle_suggestions", %{"panel" => panel}, socket) do
-    panel = to_string(panel)
-
-    update(socket, :shown_suggestions, fn shown ->
-      if MapSet.member?(shown, panel),
-        do: MapSet.delete(shown, panel),
-        else: MapSet.put(shown, panel)
-    end)
-    |> wrap(:noreply)
   end
 end

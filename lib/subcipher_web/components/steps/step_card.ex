@@ -28,10 +28,6 @@ defmodule SubcipherWeb.Components.StepCard do
     default: nil,
     doc: "Subcipher.Steps.suggestions/3: a list, or nil when the cipher doesn't suggest"
 
-  attr :suggestions_shown, :boolean,
-    default: false,
-    doc: "whether the suggestions were asked for (they may spoil the puzzle)"
-
   attr :can_move_up, :boolean, required: true
   attr :can_move_down, :boolean, required: true
   attr :can_delete, :boolean, required: true
@@ -65,7 +61,7 @@ defmodule SubcipherWeb.Components.StepCard do
       <.suggestions_panel
         :if={@suggestions || @solver_state}
         id={to_string(@step.id)}
-        shown={@suggestions_shown}
+        class="rounded-xl border border-base-300"
         suggestions={Enum.map(@suggestions || [], &Map.put(&1, :use, use_params(@step, &1)))}
         solver={
           @solver_state &&

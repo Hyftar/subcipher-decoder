@@ -16,10 +16,12 @@ defmodule SubcipherWeb.PuzzleLive.Index.Guessing do
   Assigns: `guess_form`, `guess_text`, `guess_run`, `guess_status` (nil,
   `:loading`, `:ready` or `{:error, reason}`), `guess_candidates`,
   `guess_result` (`Subcipher.Guesser.result/2`), `guess_pending` (ciphers
-  whose deep pass is running), `guess_note` (nil, `:login` or `:busy`).
+  whose deep pass is running), `guess_note` (nil, `:login` or `:busy`),
+  `guess_revealed` (types of the ciphers whose solution is shown: hidden by
+  default so they don't spoil the puzzle).
   """
 
-  import Phoenix.Component, only: [assign: 2, to_form: 2]
+  import Phoenix.Component, only: [assign: 2, to_form: 2, update: 3]
   import Phoenix.LiveView, only: [start_async: 3, cancel_async: 2]
 
   alias Subcipher.Guesser
@@ -34,7 +36,8 @@ defmodule SubcipherWeb.PuzzleLive.Index.Guessing do
       guess_candidates: [],
       guess_result: nil,
       guess_pending: [],
-      guess_note: nil
+      guess_note: nil,
+      guess_revealed: MapSet.new()
     )
   end
 
@@ -52,7 +55,8 @@ defmodule SubcipherWeb.PuzzleLive.Index.Guessing do
       guess_candidates: [],
       guess_result: nil,
       guess_pending: [],
-      guess_note: nil
+      guess_note: nil,
+      guess_revealed: MapSet.new()
     )
     |> start_async({:guess_quick, run}, fn -> Guesser.quick(text) end)
     |> start_deep(text, run)
@@ -134,6 +138,15 @@ defmodule SubcipherWeb.PuzzleLive.Index.Guessing do
       guess_candidates: candidates,
       guess_result: Guesser.result(socket.assigns.guess_text, candidates)
     )
+  end
+
+  @doc "Shows or hides the solution (decoded text) of the guess of cipher `type`."
+  def toggle_reveal(socket, type) do
+    update(socket, :guess_revealed, fn revealed ->
+      if MapSet.member?(revealed, type),
+        do: MapSet.delete(revealed, type),
+        else: MapSet.put(revealed, type)
+    end)
   end
 
   @doc """

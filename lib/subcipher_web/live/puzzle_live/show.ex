@@ -44,14 +44,12 @@ defmodule SubcipherWeb.PuzzleLive.Show do
       selected_symbol_id: nil,
       selected_glyph_id: nil,
       merging: false,
-      show_image: false,
       # The glyphs panel of the selected symbol (occurrences, sample, crop),
       # the occurrence it edits (nil = the selected glyph, else the sample)
       # and how it shows it ("original" or "mask": the black and white pass).
       show_glyphs: false,
       edited_glyph_id: nil,
       glyph_view: "original",
-      show_add: false,
       # Invalid parameter forms being edited, by step id (kept until fixed).
       step_forms: %{},
       # Number of the step shown (?step=N), or :new for the "add a step" view.
@@ -61,7 +59,6 @@ defmodule SubcipherWeb.PuzzleLive.Show do
       solving: nil,
       # Suggestion panels opened by the user ("symbols" or a step id): they
       # can spoil the puzzle, so they stay hidden until asked for.
-      shown_suggestions: MapSet.new(),
       english_frequency: @english_frequency
     )
     |> Assigns.load(puzzle)
@@ -95,14 +92,14 @@ defmodule SubcipherWeb.PuzzleLive.Show do
   @selection_events ~w(select_glyph select_symbol deselect key)
   @symbol_events ~w(assign toggle_ignore start_merge cancel_merge detach reset_letters regroup)
   @glyph_events ~w(toggle_glyphs edit_glyph glyph_view set_sample trim_glyph reset_trim)
-  @picture_events ~w(toggle_image toggle_add move_image delete_image)
+  @picture_events ~w(move_image delete_image)
   @step_events ~w(add_step change_step_type update_input update_step apply_suggestion delete_step move_step)
-  @suggestion_events ~w(toggle_suggestions solve apply_letters)
+  @suggestion_events ~w(solve apply_letters)
   @puzzle_events ~w(toggle_public make_algorithm rename_blur rename)
 
   # What visitors of a public puzzle may do: look around (select, navigate,
   # open panels). Every other event changes the puzzle: owner only.
-  @viewer_events ~w(select_glyph select_symbol deselect key toggle_glyphs edit_glyph glyph_view toggle_image)
+  @viewer_events ~w(select_glyph select_symbol deselect key toggle_glyphs edit_glyph glyph_view)
   @navigation_keys ~w(ArrowLeft ArrowRight ArrowUp ArrowDown Tab Escape)
 
   @impl true
@@ -151,7 +148,6 @@ defmodule SubcipherWeb.PuzzleLive.Show do
       end
 
     socket
-    |> assign(show_add: false)
     |> Assigns.load(puzzle)
     |> put_flash(:info, message)
     |> wrap(:noreply)
@@ -183,9 +179,6 @@ defmodule SubcipherWeb.PuzzleLive.Show do
               result={@current_entry.result}
               form={@current_entry.form}
               suggestions={@current_entry.suggestions}
-              suggestions_shown={
-                MapSet.member?(@shown_suggestions, to_string(@current_entry.result.step.id))
-              }
               solver_state={
                 if Steps.implements?(@current_entry.result.cipher, :solve, 2),
                   do: Solver.solver_state(assigns, @current_entry.solve_key)
@@ -207,8 +200,6 @@ defmodule SubcipherWeb.PuzzleLive.Show do
               sections={@sections}
               duplicates={@duplicates}
               plaintext={@plaintext}
-              show_image={@show_image}
-              show_add={@show_add}
               show_glyphs={@show_glyphs}
               edited_glyph_id={@edited_glyph_id}
               current_scope={@current_scope}
@@ -216,7 +207,6 @@ defmodule SubcipherWeb.PuzzleLive.Show do
               tolerance={@tolerance}
               english_frequency={@english_frequency}
               symbol_suggestions={@symbol_suggestions}
-              suggestions_shown={MapSet.member?(@shown_suggestions, "symbols")}
               symbol_solver={
                 %{
                   state: Solver.symbols_solver_state(assigns),

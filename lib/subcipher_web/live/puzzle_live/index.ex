@@ -99,6 +99,10 @@ defmodule SubcipherWeb.PuzzleLive.Index do
     socket |> Guessing.start(text) |> wrap(:noreply)
   end
 
+  def handle_event("toggle_guess_solution", %{"type" => type}, socket) do
+    socket |> Guessing.toggle_reveal(type) |> wrap(:noreply)
+  end
+
   # Starts a new puzzle with the guessed cipher, prefilled with the guessed
   # text, with the settings of its guess (none for a hint: `hint` set).
   def handle_event("use_guess", %{"type" => type} = params, socket) do
@@ -185,6 +189,7 @@ defmodule SubcipherWeb.PuzzleLive.Index do
             result={@guess_result}
             pending={@guess_pending}
             note={@guess_note}
+            revealed={@guess_revealed}
             current_scope={@current_scope}
           />
 

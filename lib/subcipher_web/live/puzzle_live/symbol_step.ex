@@ -21,8 +21,6 @@ defmodule SubcipherWeb.PuzzleLive.SymbolStep do
   attr :sections, :list, required: true
   attr :duplicates, :any, required: true
   attr :plaintext, :string, required: true
-  attr :show_image, :boolean, required: true
-  attr :show_add, :boolean, required: true
   attr :show_glyphs, :boolean, required: true
   attr :edited_glyph_id, :any, required: true
   attr :current_scope, :any, required: true
@@ -31,7 +29,6 @@ defmodule SubcipherWeb.PuzzleLive.SymbolStep do
   attr :english_frequency, :string, required: true
   attr :symbol_suggestions, :list, required: true
   attr :symbol_solver, :map, required: true
-  attr :suggestions_shown, :boolean, required: true
 
   def symbol_step(assigns) do
     ~H"""
@@ -49,6 +46,15 @@ defmodule SubcipherWeb.PuzzleLive.SymbolStep do
     >
       <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div class="space-y-6 min-w-0">
+          <div class="space-y-3">
+            <.add_picture_panel puzzle={@puzzle} current_scope={@current_scope} />
+            <.suggestions_panel
+              id="symbols"
+              suggestions={@symbol_suggestions}
+              solver={@symbol_solver}
+            />
+          </div>
+
           <.selection_bar
             symbol={@symbols[@selected_symbol_id]}
             glyph_id={@selected_glyph_id}
@@ -85,25 +91,13 @@ defmodule SubcipherWeb.PuzzleLive.SymbolStep do
             <.output id="plaintext" text={@plaintext} />
           </section>
 
-          <section class="rounded-2xl border border-base-300 bg-base-100 p-4 sm:p-6">
-            <.suggestions_panel
-              id="symbols"
-              suggestions={@symbol_suggestions}
-              solver={@symbol_solver}
-              shown={@suggestions_shown}
-            />
-          </section>
-
           <.pictures_panel
             puzzle={@puzzle}
             sections={@sections}
             symbols={@symbols}
             selected_symbol_id={@selected_symbol_id}
-            show={@show_image}
             tolerance={@tolerance}
           />
-
-          <.add_picture_panel puzzle={@puzzle} current_scope={@current_scope} show={@show_add} />
         </div>
 
         <.symbol_key

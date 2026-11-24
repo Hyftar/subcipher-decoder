@@ -271,7 +271,8 @@ defmodule SubcipherWeb.PuzzleLiveTest do
       view |> element("#glyph-#{first.id}") |> render_click()
       view |> element("#puzzle") |> render_hook("key", %{"key" => "t"})
 
-      view |> element("#add-picture button", "Add a picture") |> render_click()
+      # In the collapsed "Add a picture" accordion.
+      assert has_element?(view, "#add-picture-content.hidden #add-picture-upload-form")
 
       view
       |> file_input("#add-picture-upload-form", :image, [
@@ -317,8 +318,7 @@ defmodule SubcipherWeb.PuzzleLiveTest do
       assert order.() == [second.id, first.id]
       assert has_element?(view, "#section-#{second.id}", "Picture 1")
 
-      # Same controls in the original pictures panel.
-      view |> element("button", "Original pictures") |> render_click()
+      # Same controls in the original pictures panel (collapsed accordion).
       view |> element("#picture-#{first.id} button[aria-label*=up]") |> render_click()
       assert order.() == [first.id, second.id]
     end
@@ -344,7 +344,6 @@ defmodule SubcipherWeb.PuzzleLiveTest do
       {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
       assert view |> element("#progress") |> render() =~ "0 / 44"
 
-      view |> element("button", "Original pictures") |> render_click()
       view |> element("#picture-#{second.id} button", "Remove") |> render_click()
 
       assert view |> element("#progress") |> render() =~ "0 / 26"

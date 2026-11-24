@@ -15,6 +15,11 @@ defmodule SubcipherWeb.PuzzleLive.Index.CipherGuesser do
   attr :result, :map, default: nil, doc: "`Guesser.result/2`"
   attr :pending, :list, default: [], doc: "ciphers whose solver is still running"
   attr :note, :atom, default: nil, doc: "why there is no deep pass: :login or :busy"
+
+  attr :revealed, :any,
+    default: MapSet.new(),
+    doc: "types of the ciphers whose solution is shown (hidden by default)"
+
   attr :current_scope, :any, required: true
 
   def cipher_guesser(assigns) do
@@ -78,6 +83,7 @@ defmodule SubcipherWeb.PuzzleLive.Index.CipherGuesser do
         :if={@status == :ready && @result}
         result={@result}
         searching={@pending != []}
+        revealed={@revealed}
         current_scope={@current_scope}
       />
     </div>
@@ -125,6 +131,7 @@ defmodule SubcipherWeb.PuzzleLive.Index.CipherGuesser do
 
   attr :result, :map, required: true
   attr :searching, :boolean, default: false, doc: "solvers still running"
+  attr :revealed, :any, required: true
   attr :current_scope, :any, required: true
 
   defp results(assigns) do
@@ -133,7 +140,13 @@ defmodule SubcipherWeb.PuzzleLive.Index.CipherGuesser do
       |> Enum.with_index()
       |> Enum.map(fn {guess, index} ->
         readable? = Guesser.readable?(guess)
-        Map.merge(guess, %{index: index, readable?: readable?, winner: index == 0 and readable?})
+
+        Map.merge(guess, %{
+          index: index,
+          readable?: readable?,
+          winner: index == 0 and readable?,
+          revealed?: MapSet.member?(assigns.revealed, guess.cipher.type())
+        })
       end)
 
     assigns = assign(assigns, guesses: guesses, readable?: Enum.any?(guesses, & &1.readable?))
@@ -203,7 +216,13 @@ defmodule SubcipherWeb.PuzzleLive.Index.CipherGuesser do
               <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                 <p class="font-semibold">
                   {guess.cipher.name()}
-                  <span class="font-normal text-sm text-base-content/60">· {guess.label}</span>
+                  <span
+                    :if={guess.revealed?}
+                    id={"guess-label-#{guess.cipher.type()}"}
+                    class="font-normal text-sm text-base-content/60"
+                  >
+                    · {guess.label}
+                  </span>
                   <span
                     :if={guess.deep}
                     id={"guess-solver-#{guess.cipher.type()}"}
@@ -223,16 +242,35 @@ defmodule SubcipherWeb.PuzzleLive.Index.CipherGuesser do
                 <.icon name="hero-check-badge" class="size-4 shrink-0 text-success" />
                 <span><span class="font-medium">Format recognized.</span> {guess.recognized}</span>
               </p>
-              <p class="font-mono text-sm break-words bg-base-200/60 rounded-md px-2 py-1">
+              <p
+                :if={guess.revealed?}
+                id={"guess-preview-#{guess.cipher.type()}"}
+                class="font-mono text-sm break-words bg-base-200/60 rounded-md px-2 py-1"
+              >
                 {guess.preview}
+              </p>
+              <p
+                :if={!guess.revealed?}
+                class="flex items-center gap-1.5 rounded-md border border-dashed border-base-300 px-2 py-1 text-xs text-base-content/50"
+              >
+                <.icon name="hero-eye-slash" class="size-4 shrink-0" />
+                Solution and key hidden so they don't spoil the puzzle.
               </p>
               <p :if={guess.same_as} class="text-xs text-base-content/50">
                 Same result as {guess.same_as.name()}, a simpler explanation.
               </p>
-              <p :if={!guess.same_as} class="text-xs text-base-content/60">{guess.reason}</p>
+              <%!-- The reason can name the key or words of the result. --%>
+              <p
+                :if={!guess.same_as and guess.revealed?}
+                id={"guess-reason-#{guess.cipher.type()}"}
+                class="text-xs text-base-content/60"
+              >
+                {guess.reason}
+              </p>
             </div>
           </div>
-          <div class="flex justify-end mt-2">
+          <div class="flex flex-wrap items-center justify-between gap-2 mt-2">
+            <.reveal_switch type={guess.cipher.type()} revealed={guess.revealed?} />
             <.use_button
               id={"guess-use-#{guess.cipher.type()}"}
               type={guess.cipher.type()}
@@ -276,6 +314,38 @@ defmodule SubcipherWeb.PuzzleLive.Index.CipherGuesser do
       </span>
       {fit_label(@fit)}
     </span>
+    """
+  end
+
+  attr :type, :string, required: true
+  attr :revealed, :boolean, required: true
+
+  # Shows or hides a guess's solution.
+  defp reveal_switch(assigns) do
+    ~H"""
+    <button
+      type="button"
+      role="switch"
+      id={"guess-reveal-#{@type}"}
+      aria-checked={to_string(@revealed)}
+      phx-click="toggle_guess_solution"
+      phx-value-type={@type}
+      class="group/switch inline-flex items-center gap-2 rounded-full py-1 pr-2 text-xs font-medium text-base-content/60 cursor-pointer select-none transition-colors hover:text-base-content focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary/50"
+    >
+      <span class={[
+        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200",
+        if(@revealed,
+          do: "bg-secondary",
+          else: "bg-base-300 group-hover/switch:bg-base-content/25"
+        )
+      ]}>
+        <span class={[
+          "inline-block size-4 rounded-full bg-base-100 shadow-sm transition-transform duration-200",
+          if(@revealed, do: "translate-x-4.5", else: "translate-x-0.5")
+        ]}></span>
+      </span>
+      Show solution
+    </button>
     """
   end
 

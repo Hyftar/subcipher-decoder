@@ -47,6 +47,33 @@ defmodule SubcipherWeb.CipherGuesserLiveTest do
       assert Steps.params(step).shift == 7
     end
 
+    test "solutions and keys are hidden until toggled, and hidden again on a new guess", %{
+      conn: conn
+    } do
+      {:ok, view, _} = live(conn, ~p"/")
+      guess(view, Caesar.encode(@plain, %{shift: 7}))
+
+      refute has_element?(view, "#guess-preview-caesar")
+      refute has_element?(view, "#guess-label-caesar")
+      refute has_element?(view, "#guess-reason-caesar")
+      refute render(view) =~ "Shift 7"
+      assert has_element?(view, "#guess-reveal-caesar[aria-checked=false]")
+
+      view |> element("#guess-reveal-caesar") |> render_click()
+      assert has_element?(view, "#guess-preview-caesar", ~r/meet me at the old mill/i)
+      assert has_element?(view, "#guess-label-caesar", "Shift 7")
+      assert has_element?(view, "#guess-reason-caesar")
+      assert has_element?(view, "#guess-reveal-caesar[aria-checked=true]")
+
+      view |> element("#guess-reveal-caesar") |> render_click()
+      refute has_element?(view, "#guess-preview-caesar")
+      refute has_element?(view, "#guess-label-caesar")
+
+      view |> element("#guess-reveal-caesar") |> render_click()
+      guess(view, Caesar.encode(@plain, %{shift: 3}))
+      refute has_element?(view, "#guess-preview-caesar")
+    end
+
     test "the solvers find a shuffled alphabet, and its settings start the puzzle", %{
       conn: conn,
       scope: scope

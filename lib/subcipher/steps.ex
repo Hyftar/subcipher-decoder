@@ -92,6 +92,9 @@ defmodule Subcipher.Steps do
     end
   end
 
+  @doc "What the cipher's solver does (`c:Subcipher.Steps.Cipher.solve_help/0`), or nil."
+  def solve_help(cipher), do: if(implements?(cipher, :solve_help, 0), do: cipher.solve_help())
+
   @doc """
   Runs the cipher's solver on `input` (see `c:Subcipher.Steps.Cipher.solve/2`).
   Returns `{:ok, suggestion}` (with `:preview` and `:applied`, like

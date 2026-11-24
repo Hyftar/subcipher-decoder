@@ -359,8 +359,10 @@ defmodule Subcipher.Ciphers do
   @doc """
   Creates a puzzle whose input is text (`attrs`: title, input_text), with a
   first decoding step of cipher `first_step_type`, owned by the scope's user.
+  `step_params` (e.g. a guessed key) are set on that step instead of the
+  defaults.
   """
-  def create_text_puzzle(%Scope{user: user}, attrs, first_step_type) do
+  def create_text_puzzle(%Scope{user: user}, attrs, first_step_type, step_params \\ %{}) do
     changeset =
       Puzzle.text_changeset(
         %Puzzle{user_id: user.id},
@@ -371,6 +373,11 @@ defmodule Subcipher.Ciphers do
     |> Multi.insert(:puzzle, changeset)
     |> Multi.run(:step, fn _repo, %{puzzle: puzzle} ->
       Subcipher.Steps.add_step(puzzle, first_step_type)
+    end)
+    |> Multi.run(:params, fn _repo, %{step: step} ->
+      if step_params == %{},
+        do: {:ok, step},
+        else: Subcipher.Steps.update_params(step, step_params)
     end)
     |> Repo.transaction()
     |> case do

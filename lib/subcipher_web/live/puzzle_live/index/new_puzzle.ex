@@ -12,6 +12,7 @@ defmodule SubcipherWeb.PuzzleLive.Index.NewPuzzle do
   attr :input_kinds, :list, required: true, doc: "the input kinds of the cipher"
   attr :text_form, :any, required: true
   attr :current_scope, :any, required: true
+  attr :guess_choice, :map, default: nil, doc: "the guess this puzzle starts from, if any"
 
   def new_puzzle(assigns) do
     ~H"""
@@ -26,6 +27,15 @@ defmodule SubcipherWeb.PuzzleLive.Index.NewPuzzle do
           <.icon name="hero-arrow-path-rounded-square" class="size-5" /> Change
         </.link>
       </div>
+
+      <p
+        :if={@guess_choice && @guess_choice.label}
+        id="guess-choice"
+        class="text-sm rounded-lg bg-secondary/10 px-3 py-2 flex items-center gap-2"
+      >
+        <.icon name="hero-sparkles" class="size-4 text-secondary shrink-0" />
+        The guessed settings ({@guess_choice.label}) will be applied to the first step.
+      </p>
 
       <%= if @input_kind == "pictures" do %>
         <.live_component

@@ -331,7 +331,7 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
       scope: scope
     } do
       {:ok, puzzle} =
-        Ciphers.create_text_puzzle(scope, %{title: "Morse", input_text: "... --- ..."}, "morse")
+        Ciphers.create_text_puzzle(scope, %{title: "Atbash", input_text: "Hvxivg"}, "atbash")
 
       [step] = puzzle.steps
       {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")

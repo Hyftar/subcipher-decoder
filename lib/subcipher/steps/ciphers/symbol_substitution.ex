@@ -197,4 +197,22 @@ defmodule Subcipher.Steps.Ciphers.SymbolSubstitution do
         {:error, "Too short to solve: at least 8 symbols are needed."}
     end
   end
+
+  # Three or more symbols, none a Latin letter or a digit: an alphabet of symbols
+  # (one or two symbols are Morse code, which recognizes them).
+  @impl true
+  def recognize(input) do
+    symbols = input |> Alphabet.symbol_frequencies() |> Enum.map(&elem(&1, 0))
+
+    if length(symbols) >= 3 and not Enum.any?(symbols, &(&1 =~ ~r/^[A-Za-z0-9]$/)) and
+         Subcipher.Steps.Ciphers.Morse.recognize(input) == nil do
+      "The text is made of #{length(symbols)} symbols that aren't Latin letters or digits: " <>
+        "each one likely stands for a letter."
+    end
+  end
+
+  @impl true
+  def solve_help,
+    do:
+      "Searches for the letters that make the text read most like English (a second or two). Letters you already set are kept, so fixing a few and solving again helps."
 end

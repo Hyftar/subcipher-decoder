@@ -66,6 +66,44 @@ defmodule SubcipherWeb.PuzzleSolverLiveTest do
     refute view |> element("#step-output-#{step.id}") |> render() =~ "·"
   end
 
+  for {type, cipher, params} <- [
+        {"keyword_substitution", Subcipher.Steps.Ciphers.KeywordSubstitution,
+         %{keyword: "VARROCK"}},
+        {"vigenere", Subcipher.Steps.Ciphers.Vigenere, %{key: "WIZARD"}},
+        {"mixed_alphabet", Subcipher.Steps.Ciphers.MixedAlphabet, nil}
+      ] do
+    test "the #{type} step solves with the stronger solvers", %{conn: conn, scope: scope} do
+      cipher = unquote(cipher)
+      plain = "Meet me at the old mill at midnight and bring the map with you"
+
+      # A mixed alphabet: a keyword one, too short for the general solver.
+      params = unquote(Macro.escape(params)) || %{mapping: keyword_mapping("DRAGON")}
+      text = cipher.encode(plain, params)
+
+      {:ok, puzzle} =
+        Ciphers.create_text_puzzle(scope, %{title: "Strong", input_text: text}, unquote(type))
+
+      [step] = puzzle.steps
+      {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
+      assert has_element?(view, "#solver-#{step.id}", cipher.solve_help() |> String.slice(0, 30))
+
+      view |> element("#solve-#{step.id}") |> render_click()
+      render_async(view, 30_000)
+      view |> element("#apply-solution-#{step.id}") |> render_click()
+
+      assert view |> element("#step-output-#{step.id}") |> render() =~ plain
+    end
+  end
+
+  # The mapping (cipher letter -> plain letter) of a keyword alphabet.
+  defp keyword_mapping(keyword) do
+    keyword
+    |> Subcipher.Steps.Ciphers.KeywordSubstitution.cipher_alphabet()
+    |> String.graphemes()
+    |> Enum.zip(Enum.map(?A..?Z, &<<&1>>))
+    |> Map.new()
+  end
+
   test "frequency_letters/1 keeps the letters already set" do
     puzzle = puzzle_fixture()
     tokens = Ciphers.symbol_tokens(puzzle)

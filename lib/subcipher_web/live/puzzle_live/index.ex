@@ -6,7 +6,9 @@ defmodule SubcipherWeb.PuzzleLive.Index do
   alias Subcipher.Steps
 
   import SubcipherWeb.Components.CipherGrid
-  import SubcipherWeb.PuzzleLive.Index.{Library, NewPuzzle, SignUpPrompt}
+  import SubcipherWeb.PuzzleLive.Index.{CipherGuesser, Library, NewPuzzle, SignUpPrompt}
+
+  alias SubcipherWeb.PuzzleLive.Index.Guessing
 
   @impl true
   def mount(_params, _session, socket) do
@@ -14,8 +16,10 @@ defmodule SubcipherWeb.PuzzleLive.Index do
     |> assign(
       page_title: "Puzzles",
       text_form: to_form(Ciphers.change_text_puzzle()),
-      new_algorithm: false
+      new_algorithm: false,
+      guess_choice: nil
     )
+    |> Guessing.mount()
     |> assign_lists()
     |> wrap(:ok)
   end
@@ -47,12 +51,19 @@ defmodule SubcipherWeb.PuzzleLive.Index do
     kinds = if cipher, do: Enum.map(cipher.input_kinds(), &to_string/1), else: []
     input = if params["input"] in kinds, do: params["input"], else: List.first(kinds)
 
+    # A guess chosen for this cipher: its text fills the form, its settings
+    # are applied to the new puzzle.
+    choice = socket.assigns.guess_choice
+    choice = if cipher && choice && choice.type == cipher.type(), do: choice
+    text = if choice, do: %{"input_text" => choice.text}, else: %{}
+
     socket
     |> assign(
       cipher: cipher,
       input_kind: input,
       input_kinds: kinds,
-      text_form: to_form(Ciphers.change_text_puzzle())
+      guess_choice: choice,
+      text_form: to_form(Ciphers.change_text_puzzle(text))
     )
     |> wrap(:noreply)
   end
@@ -60,7 +71,7 @@ defmodule SubcipherWeb.PuzzleLive.Index do
   # Creating and deleting need an account.
   @impl true
   def handle_event(event, _params, %{assigns: %{current_scope: nil}} = socket)
-      when event in ~w(create_algorithm create_text delete) do
+      when event in ~w(create_algorithm create_text delete use_guess) do
     socket
     |> put_flash(:error, "Log in to create puzzles and algorithms.")
     |> push_navigate(to: ~p"/users/log-in")
@@ -84,6 +95,28 @@ defmodule SubcipherWeb.PuzzleLive.Index do
     end
   end
 
+  def handle_event("guess", %{"guess" => %{"text" => text}}, socket) do
+    socket |> Guessing.start(text) |> wrap(:noreply)
+  end
+
+  # Starts a new puzzle with the guessed cipher, prefilled with the guessed
+  # text, with the settings of its guess (none for a hint: `hint` set).
+  def handle_event("use_guess", %{"type" => type} = params, socket) do
+    guess = if params["hint"], do: nil, else: Guessing.find(socket, type)
+
+    choice = %{
+      type: type,
+      text: socket.assigns.guess_text,
+      params: if(guess, do: guess.params, else: %{}),
+      label: guess && guess.label
+    }
+
+    socket
+    |> assign(guess_choice: choice)
+    |> push_patch(to: ~p"/?cipher=#{type}&input=text")
+    |> wrap(:noreply)
+  end
+
   def handle_event("choose_cipher", %{"type" => type}, socket) do
     socket |> push_patch(to: ~p"/?cipher=#{type}") |> wrap(:noreply)
   end
@@ -97,7 +130,8 @@ defmodule SubcipherWeb.PuzzleLive.Index do
     case Ciphers.create_text_puzzle(
            socket.assigns.current_scope,
            params,
-           socket.assigns.cipher.type()
+           socket.assigns.cipher.type(),
+           guess_params(socket.assigns.guess_choice)
          ) do
       {:ok, puzzle} ->
         socket |> push_navigate(to: ~p"/puzzles/#{puzzle}") |> wrap(:noreply)
@@ -122,6 +156,13 @@ defmodule SubcipherWeb.PuzzleLive.Index do
   end
 
   @impl true
+  def handle_async(name, result, socket),
+    do: name |> Guessing.handle_async(result, socket) |> wrap(:noreply)
+
+  defp guess_params(%{params: params}), do: params
+  defp guess_params(nil), do: %{}
+
+  @impl true
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
@@ -137,8 +178,18 @@ defmodule SubcipherWeb.PuzzleLive.Index do
           </div>
           <.sign_up_prompt :if={!@current_scope} />
 
+          <.cipher_guesser
+            :if={!@cipher}
+            form={@guess_form}
+            status={@guess_status}
+            result={@guess_result}
+            pending={@guess_pending}
+            note={@guess_note}
+            current_scope={@current_scope}
+          />
+
           <div :if={@current_scope && !@cipher} id="choose-cipher" class="space-y-3">
-            <h2 class="font-semibold">Which cipher is it?</h2>
+            <h2 class="font-semibold">Know the cipher? Pick it</h2>
             <.cipher_grid id_prefix="new-cipher-" event="choose_cipher" />
           </div>
           <.new_puzzle
@@ -147,6 +198,7 @@ defmodule SubcipherWeb.PuzzleLive.Index do
             input_kind={@input_kind}
             input_kinds={@input_kinds}
             text_form={@text_form}
+            guess_choice={@guess_choice}
             current_scope={@current_scope}
           />
         </div>

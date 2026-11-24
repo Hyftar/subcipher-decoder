@@ -30,6 +30,12 @@ defmodule Subcipher.English do
     total
   end
 
+  @doc """
+  Log10 probability of the quadgram `a b c d` (letters 0..25), for scoring
+  a text letter by letter.
+  """
+  def quadgram(a, b, c, d), do: lookup(table(), ((a * 26 + b) * 26 + c) * 26 + d)
+
   @doc "Average log10 probability per quadgram: comparable across lengths."
   def score_per_quadgram(letters) do
     case length(letters) - 3 do
@@ -53,6 +59,65 @@ defmodule Subcipher.English do
         _ -> total + unknown - 0.5 * length(letters)
       end
     end)
+  end
+
+  @doc """
+  Log10 frequency of a word (a list of letters 0..25) in English, or the
+  frequency given to words that aren't in the dictionary, plus
+  `unknown_per_letter` for each of their letters (`words_score/1` uses
+  -0.5).
+  """
+  def word_score(letters, unknown_per_letter) do
+    {table, _} = word_table()
+
+    case table do
+      %{^letters => score} -> score
+      _ -> unknown_word_score(length(letters), unknown_per_letter)
+    end
+  end
+
+  @doc "The score `word_score/2` gives a word of `length` letters not in the dictionary."
+  def unknown_word_score(length, unknown_per_letter) do
+    {_, unknown} = word_table()
+    unknown + unknown_per_letter * length
+  end
+
+  @doc """
+  How English a text reads, as a list of words (each a list of letters
+  0..25): its quadgrams (`score/1`, across words) plus its dictionary words
+  (`words_score/1`). The fitness the solvers maximise.
+  """
+  def text_score(words), do: score(List.flatten(words)) + words_score(words)
+
+  @doc "The words of `text`: its runs of letters, each a list of letters 0..25."
+  def words(text) do
+    text |> String.upcase() |> String.split(~r/[^A-Z]+/, trim: true) |> Enum.map(&letters/1)
+  end
+
+  @doc """
+  The dictionary words (lists of letters 0..25) of `min`..`max` letters,
+  most frequent first.
+  """
+  def dictionary(min \\ 1, max \\ 100) do
+    sorted =
+      case :persistent_term.get({__MODULE__, :dictionary}, nil) do
+        nil ->
+          {table, _} = word_table()
+          sorted = table |> Enum.sort_by(&elem(&1, 1), :desc) |> Enum.map(&elem(&1, 0))
+          :persistent_term.put({__MODULE__, :dictionary}, sorted)
+          sorted
+
+        sorted ->
+          sorted
+      end
+
+    Enum.filter(sorted, &(length(&1) in min..max))
+  end
+
+  @doc "Number of words in the dictionary."
+  def dictionary_size do
+    {table, _} = word_table()
+    map_size(table)
   end
 
   @doc "Whether `word` (a string) is in the dictionary."

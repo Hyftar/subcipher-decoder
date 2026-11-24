@@ -111,10 +111,31 @@ defmodule Subcipher.Steps.Cipher do
   @callback solve(input :: String.t(), params :: map()) ::
               {:ok, suggestion()} | {:error, String.t()}
 
+  @doc """
+  Optional: what the solver (`solve/2`) does, in plain words, shown on its
+  "Try to solve" card.
+  """
+  @callback solve_help() :: String.t()
+
+  @doc """
+  Optional: whether `input` is unmistakably written in this cipher's format
+  (e.g. only dots and dashes, all valid Morse codes), whatever it decodes
+  to. Returns why, in plain words, or nil. Used to guess the cipher of a
+  text (`Subcipher.Guesser`): a recognized format wins even when the result
+  is too short to tell whether it reads like English.
+  """
+  @callback recognize(input :: String.t()) :: String.t() | nil
+
   @doc "Optional: where this cipher is used in Old School RuneScape."
   @callback osrs_usage() :: String.t()
 
-  @optional_callbacks summary: 1, suggestions: 2, solve: 2, osrs_usage: 0, encode: 2
+  @optional_callbacks summary: 1,
+                      suggestions: 2,
+                      solve: 2,
+                      osrs_usage: 0,
+                      encode: 2,
+                      recognize: 1,
+                      solve_help: 0
 
   defmacro __using__(_opts) do
     quote do

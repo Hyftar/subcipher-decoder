@@ -12,6 +12,8 @@ defmodule Subcipher.Application do
       Subcipher.Repo,
       {DNSCluster, query: Application.get_env(:subcipher, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Subcipher.PubSub},
+      # Slots for the CPU-heavy deep pass of the cipher guesser.
+      Subcipher.Guesser.Limiter,
       # Start a worker by calling: Subcipher.Worker.start_link(arg)
       # {Subcipher.Worker, arg},
       # Start to serve requests, typically the last entry

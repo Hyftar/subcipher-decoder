@@ -113,6 +113,27 @@ defmodule Subcipher.Steps.Ciphers.LetterNumbers do
     end
   end
 
+  # Only numbers (and separators), all of them letters with A = 0 or 1.
+  @impl true
+  def recognize(input) do
+    numbers = Regex.scan(~r/\d+/, input) |> List.flatten() |> Enum.map(&String.to_integer/1)
+    only_numbers? = String.replace(input, ~r/[\d\s,.\-\/|]+/u, "") == ""
+
+    cond do
+      numbers == [] or not only_numbers? ->
+        nil
+
+      Enum.all?(numbers, &(&1 in 1..26)) ->
+        "The text has only numbers from 1 to 26: positions of letters in the alphabet."
+
+      Enum.all?(numbers, &(&1 in 0..25)) ->
+        "The text has only numbers from 0 to 25: positions of letters in the alphabet (A = 0)."
+
+      true ->
+        nil
+    end
+  end
+
   defp out_of_range_note(0), do: ""
   defp out_of_range_note(n), do: " #{n} number(s) are above 26: maybe not letter numbers."
 end

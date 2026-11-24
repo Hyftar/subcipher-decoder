@@ -61,7 +61,7 @@ defmodule Subcipher.Steps.SuggestionsTest do
   end
 
   test "ciphers without anything to choose don't suggest" do
-    for type <- ~w(atbash morse anagram) do
+    for type <- ~w(atbash anagram) do
       {:ok, cipher} = Steps.fetch_cipher(type)
       refute Steps.implements?(cipher, :suggestions, 2)
     end

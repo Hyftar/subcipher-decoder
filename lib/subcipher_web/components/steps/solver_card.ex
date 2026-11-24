@@ -11,7 +11,8 @@ defmodule SubcipherWeb.Components.SolverCard do
 
   attr :solver, :map,
     required: true,
-    doc: "%{state: :idle | :running | {:ok, suggestion} | {:error, message}, start: %JS{}}"
+    doc:
+      "%{state: :idle | :running | {:ok, suggestion} | {:error, message}, start: %JS{}, help: text or nil}"
 
   def solver_card(assigns) do
     ~H"""
@@ -40,8 +41,9 @@ defmodule SubcipherWeb.Components.SolverCard do
         </button>
       </div>
       <p :if={@solver.state in [:idle, :running]} class="text-sm text-base-content/70">
-        Searches for the letters that make the text read most like English (a second or
-        two). Letters you already set are kept, so fixing a few and solving again helps.
+        {@solver[:help] ||
+          "Searches for the letters that make the text read most like English (a second or two). " <>
+            "Letters you already set are kept, so fixing a few and solving again helps."}
       </p>
       <p :if={match?({:error, _}, @solver.state)} class="text-sm text-error">
         {elem(@solver.state, 1)}

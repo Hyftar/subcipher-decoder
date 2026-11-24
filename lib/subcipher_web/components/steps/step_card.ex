@@ -71,7 +71,8 @@ defmodule SubcipherWeb.Components.StepCard do
           @solver_state &&
             %{
               state: with_use(@solver_state, @step),
-              start: JS.push("solve", value: %{target: @step.id})
+              start: JS.push("solve", value: %{target: @step.id}),
+              help: Subcipher.Steps.solve_help(@cipher)
             }
         }
       />

@@ -160,4 +160,42 @@ defmodule Subcipher.Steps.Ciphers.Vigenere do
       hint -> base <> "; the result " <> hint <> "."
     end
   end
+
+  # Every dictionary word as the key, then the likeliest key lengths
+  # (`Subcipher.Solvers.VigenereSearch`), and the current key improved
+  # letter by letter: fixing part of it and solving again helps.
+  @impl true
+  def solve(input, params) do
+    current = params |> Map.get(:key) |> List.wrap() |> Enum.reject(&(String.trim(&1) == ""))
+
+    words = Subcipher.English.words(input)
+
+    if length(List.flatten(words)) < 8 do
+      {:error, "Too short to solve: at least 8 letters are needed."}
+    else
+      key =
+        Subcipher.Solvers.VigenereSearch.search(words,
+          known: current ++ Subcipher.Steps.Ciphers.KeywordSubstitution.known_keywords(),
+          starts: current
+        )
+
+      output = decode(input, %{key: key})
+
+      {:ok,
+       %{
+         label: "Key #{key}",
+         params: %{key: key},
+         reason:
+           ("Found by trying every dictionary word as the key, and the likeliest key lengths " <>
+              "letter by letter, for the most English result (longer free keys must fit much better). " <>
+              Subcipher.Solver.explain(output))
+           |> String.replace(~r/^Found by[^:.]*[:.]\s*/, "")
+       }}
+    end
+  end
+
+  @impl true
+  def solve_help,
+    do:
+      "Tries every dictionary word as the key, then the likeliest key lengths, letter by letter, for the most English result (a few seconds). Your current key is improved too, so fixing part of it and solving again helps."
 end

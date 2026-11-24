@@ -43,3 +43,6 @@ config :subcipher, :uploads_dir, Path.join(System.tmp_dir!(), "subcipher_test_up
 
 # Emails are collected in the test process (Swoosh.TestAssertions).
 config :subcipher, Subcipher.Mailer, adapter: Swoosh.Adapters.Test
+
+# Tests run many guesses at once: don't turn deep guesses away as busy.
+config :subcipher, Subcipher.Guesser.Limiter, max: 1000

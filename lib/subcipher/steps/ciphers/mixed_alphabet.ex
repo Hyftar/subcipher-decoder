@@ -125,32 +125,92 @@ defmodule Subcipher.Steps.Ciphers.MixedAlphabet do
   # The mapping of every letter through `fun` (on indexes 0..25).
   defp alphabet_mapping(fun), do: Map.new(0..25, &{<<?A + &1>>, <<?A + fun.(&1)>>})
 
-  # The letters of the input as symbols, with word breaks; the letters
-  # already mapped by the user are kept.
+  # Two searches, the better alphabet wins (how English the text reads,
+  # minus the size of the key space it comes from, `Subcipher.KeySpace`):
+  #
+  #   * the general solver (`Subcipher.Solver`), on the letters as symbols
+  #     with word breaks, keeping the letters already mapped by the user;
+  #   * keyword alphabets (`Subcipher.Solvers.KeywordSearch`): a common kind
+  #     of mixed alphabet, found on much shorter texts. Only alphabets
+  #     agreeing with the user's letters count.
   @impl true
   def solve(input, %{mapping: current}) do
+    words = Subcipher.English.words(input)
+    fixed = Map.filter(current || %{}, fn {_, to} -> to =~ ~r/^[A-Z]$/ end)
+
+    if length(List.flatten(words)) < 8 do
+      {:error, "Too short to solve: at least 8 letters are needed."}
+    else
+      kept = if fixed == %{}, do: "", else: " Your #{map_size(fixed)} letter(s) were kept."
+
+      [general_solution(input, fixed), keyword_solution(words, fixed)]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.max_by(fn {mapping, key_space, _, _} ->
+        decoded = Enum.map(words, fn word -> Enum.map(word, &plain(mapping, &1)) end)
+        Subcipher.English.text_score(decoded) - key_space
+      end)
+      |> then(fn {mapping, _, label, why} ->
+        output = decode(input, %{mapping: mapping})
+        reason = why <> " " <> strip_found(Subcipher.Solver.explain(output)) <> kept
+        {:ok, %{label: label, params: %{mapping: mapping}, reason: String.trim(reason)}}
+      end)
+    end
+  end
+
+  defp general_solution(input, fixed) do
     tokens =
       input
       |> String.upcase()
       |> String.graphemes()
       |> Enum.map(fn c -> if c =~ ~r/^[A-Z]$/, do: c, else: :gap end)
 
-    fixed = Map.filter(current || %{}, fn {_, to} -> to =~ ~r/^[A-Z]$/ end)
-
     case Subcipher.Solver.solve(tokens, fixed: fixed) do
       {:ok, %{mapping: solved}} ->
         mapping = Map.merge(solved, fixed)
-        kept = if fixed == %{}, do: "", else: " Your #{map_size(fixed)} letter(s) were kept."
+        free = map_size(mapping) - map_size(fixed)
 
-        {:ok,
-         %{
-           label: "Solver",
-           params: %{mapping: mapping},
-           reason: Subcipher.Solver.explain(decode(input, %{mapping: mapping})) <> kept
-         }}
+        {mapping, Subcipher.KeySpace.permutation(free), "Solver",
+         "Found by trying many letter assignments and keeping the one that reads most like English."}
 
       {:error, :too_short} ->
-        {:error, "Too short to solve: at least 8 letters are needed."}
+        nil
     end
   end
+
+  defp keyword_solution(words, fixed) do
+    alias Subcipher.Steps.Ciphers.KeywordSubstitution
+
+    {keyword, _score} =
+      Subcipher.Solvers.KeywordSearch.search(words, known: KeywordSubstitution.known_keywords())
+
+    # Plain letter i is written as the alphabet's i-th letter.
+    mapping =
+      keyword
+      |> KeywordSubstitution.cipher_alphabet()
+      |> String.graphemes()
+      |> Enum.with_index()
+      |> Map.new(fn {cipher, plain} -> {cipher, <<?A + plain>>} end)
+
+    if Enum.all?(fixed, fn {from, to} -> mapping[from] == to end) do
+      {mapping, Subcipher.KeySpace.word(keyword), "Keyword #{keyword} alphabet",
+       "The alphabet of the keyword #{keyword} (the keyword, then the other letters in order), " <>
+         "found by trying dictionary words and searching keywords letter by letter."}
+    end
+  end
+
+  defp plain(mapping, letter) do
+    case Map.get(mapping, <<?A + letter>>) do
+      <<c>> when c in ?A..?Z -> c - ?A
+      _ -> letter
+    end
+  end
+
+  # The explanation of the words found, without how it was found.
+  defp strip_found(explanation),
+    do: String.replace(explanation, ~r/^Found by[^:.]*[:.]\s*/, "")
+
+  @impl true
+  def solve_help,
+    do:
+      "Searches for the alphabet that makes the text read most like English (a few seconds), keyword alphabets included: they are found on much shorter texts. Letters you already set are kept, so fixing a few and solving again helps."
 end

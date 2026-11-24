@@ -53,6 +53,9 @@ defmodule Subcipher.Steps.Alphabet do
   @english [8.2, 1.5, 2.8, 4.3, 12.7, 2.2, 2.0, 6.1, 7.0, 0.15, 0.77, 4.0, 2.4] ++
              [6.7, 7.5, 1.9, 0.095, 6.0, 6.3, 9.1, 2.8, 0.98, 2.4, 0.15, 2.0, 0.074]
 
+  @doc "Relative frequencies of the letters A..Z in English text, in %."
+  def english_percentages, do: @english
+
   @doc """
   How unlike English `text` is (chi-squared distance of its letter
   frequencies): lower is more English-like. Texts without letters score

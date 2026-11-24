@@ -86,6 +86,9 @@ defmodule Subcipher.Steps.Ciphers.KeywordSubstitution do
     {"CIPHER", "A common textbook keyword."}
   ]
 
+  @doc "Keywords worth trying first: the ones known from OSRS, then common choices."
+  def known_keywords, do: Enum.map(@known_keywords, &elem(&1, 0))
+
   # Tries the known keywords and keeps the most English-like results.
   @impl true
   def suggestions(input, _params) do
@@ -110,4 +113,42 @@ defmodule Subcipher.Steps.Ciphers.KeywordSubstitution do
       end)
     end
   end
+
+  # Every dictionary word, then a search over keywords letter by letter
+  # (`Subcipher.Solvers.KeywordSearch`), starting from the current keyword
+  # too: fixing part of it and solving again helps.
+  @impl true
+  def solve(input, params) do
+    current = params |> Map.get(:keyword) |> List.wrap() |> Enum.reject(&(&1 == ""))
+
+    words = Subcipher.English.words(input)
+
+    if length(List.flatten(words)) < 8 do
+      {:error, "Too short to solve: at least 8 letters are needed."}
+    else
+      {keyword, _score} =
+        Subcipher.Solvers.KeywordSearch.search(words,
+          known: current ++ known_keywords(),
+          starts: current
+        )
+
+      output = decode(input, %{keyword: keyword})
+
+      {:ok,
+       %{
+         label: "Keyword #{keyword}",
+         params: %{keyword: keyword},
+         reason:
+           ("Found by trying every dictionary word as the keyword, then searching keywords " <>
+              "letter by letter for the most English result. " <>
+              Subcipher.Solver.explain(output))
+           |> String.replace(~r/^Found by[^:.]*[:.]\s*/, "")
+       }}
+    end
+  end
+
+  @impl true
+  def solve_help,
+    do:
+      "Tries every dictionary word as the keyword, then searches keywords letter by letter for the most English result (a few seconds). Your current keyword is tried first, so fixing part of it and solving again helps."
 end

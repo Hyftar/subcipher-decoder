@@ -254,7 +254,7 @@ The production image is built from the `Dockerfile` (a Phoenix release) by GitHu
 
 Once:
 
-1. Push to `main` and wait for the "Docker image" workflow.
+1. Push to `main` and wait for the "CI/CD" workflow.
 2. Log in to GitHub's registry from your machine, so the swarm can pull the private image
    (a token with `read:packages`): `docker login ghcr.io -u <github user>`. Or make the
    package public (Package settings, Change visibility).

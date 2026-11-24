@@ -1,21 +1,101 @@
-# Builds the production image and publishes it to GitHub's container
-# registry (ghcr.io/<owner>/<repo>), for the stack in deploy/stack.yaml.
-# Tags: latest (main branch), the version for v* tags, and the commit SHA.
-name: Docker image
+# test → build → deploy.
+#
+# test: what `mix precommit` checks (compile with warnings as errors, unused
+# deps, formatting, the Elixir and JS test suites), against PostgreSQL. Runs on
+# pull requests too; nothing else does.
+#
+# build: the production image, published to GitHub's container registry
+# (ghcr.io/<owner>/<repo>) for the stack in deploy/stack.yaml. Tags: latest
+# (main branch), the version for v* tags, and the commit SHA (short and full).
+#
+# deploy: pushes to main are deployed to the swarm over SSH: the key in the
+# "production" environment can only run deploy/remote-deploy.sh on the server,
+# with the commit SHA. The stack settings (the variables of
+# deploy/.env.example) are secrets and variables of that environment, sent on
+# stdin (see README, "Continuous deployment").
+name: CI/CD
 
 on:
   push:
     branches: [main]
     tags: ["v*"]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
+  test:
+    runs-on: ubuntu-24.04
+    env:
+      MIX_ENV: test
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same versions as the Dockerfile.
+      - id: beam
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28.5.0.8"
+          elixir-version: "1.19.7"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            mix-${{ runner.os }}-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
+
+      - run: mix deps.get
+
+      - name: Unused dependencies in mix.lock
+        run: mix deps.unlock --check-unused
+
+      - name: Formatting
+        run: mix format --check-formatted
+
+      - name: Compile (warnings as errors)
+        run: mix compile --warnings-as-errors
+
+      - name: Elixir tests
+        run: mix test
+
+      - name: JS tests
+        run: mix test.js
+
+      # The JS tests regenerate test/fixtures/*.glyphs.json, used by the
+      # Elixir tests: the committed ones must match the detector.
+      - name: Fixtures up to date
+        run: git diff --exit-code -- test/fixtures
+
   build:
+    needs: test
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
@@ -35,6 +115,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=sha
+            type=sha,format=long
 
       - uses: docker/build-push-action@v6
         with:
@@ -45,3 +126,77 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    # One deploy at a time, in push order; a newer push doesn't cancel one
+    # already running.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Deploy over SSH
+        # Secrets: what must stay hidden (masked in the logs). Variables: the
+        # rest, readable in the settings and in the (public) logs.
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER || 'subcipher-deploy' }}
+          # The stack settings (deploy/.env.example). Unset ones are left
+          # out: the stack uses its default, or refuses to deploy without
+          # the required ones.
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          SECRET_KEY_BASE: ${{ secrets.SECRET_KEY_BASE }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          PHX_HOST: ${{ vars.PHX_HOST }}
+          PHX_SCHEME: ${{ vars.PHX_SCHEME }}
+          PHX_URL_PORT: ${{ vars.PHX_URL_PORT }}
+          PHX_CHECK_ORIGIN: ${{ vars.PHX_CHECK_ORIGIN }}
+          APP_PORT: ${{ vars.APP_PORT }}
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          SMTP_TLS: ${{ vars.SMTP_TLS }}
+          SMTP_SSL: ${{ vars.SMTP_SSL }}
+          MAIL_FROM: ${{ vars.MAIL_FROM }}
+          MAIL_FROM_NAME: ${{ vars.MAIL_FROM_NAME }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+          settings=(
+            POSTGRES_PASSWORD SECRET_KEY_BASE
+            PHX_HOST PHX_SCHEME PHX_URL_PORT PHX_CHECK_ORIGIN APP_PORT
+            SMTP_HOST SMTP_PORT SMTP_USERNAME SMTP_PASSWORD SMTP_TLS SMTP_SSL
+            MAIL_FROM MAIL_FROM_NAME
+          )
+          for name in "${settings[@]}"; do
+            value="${!name}"
+            # A pasted value may end with a newline; one inside is an error.
+            value="${value%$'\n'}"
+            value="${value%$'\r'}"
+            if [[ "$value" == *$'\n'* ]]; then
+              echo "::error::The setting $name has several lines." >&2
+              exit 1
+            fi
+            if [[ -n "$value" ]]; then
+              printf '%s=%s\n' "$name" "$value"
+            fi
+          done > "$RUNNER_TEMP/settings.env"
+
+          ssh -i ~/.ssh/deploy_key \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes \
+            -o ConnectTimeout=20 \
+            -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "$GITHUB_SHA" < "$RUNNER_TEMP/settings.env"
+          rm -f "$RUNNER_TEMP/settings.env"

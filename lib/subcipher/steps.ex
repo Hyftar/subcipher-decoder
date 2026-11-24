@@ -17,6 +17,10 @@ defmodule Subcipher.Steps do
   alias Subcipher.Steps.Ciphers.{
     Anagram,
     Atbash,
+    BinaryAscii,
+    BinaryUnicode,
+    HexAscii,
+    HexUnicode,
     Caesar,
     KeywordSubstitution,
     LetterNumbers,
@@ -39,6 +43,10 @@ defmodule Subcipher.Steps do
     Atbash,
     Morse,
     LetterNumbers,
+    BinaryAscii,
+    HexAscii,
+    BinaryUnicode,
+    HexUnicode,
     Reverse,
     Route,
     Anagram

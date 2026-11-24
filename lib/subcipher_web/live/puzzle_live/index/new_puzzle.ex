@@ -93,6 +93,10 @@ defmodule SubcipherWeb.PuzzleLive.Index.NewPuzzle do
     case cipher.type() do
       "morse" -> "-- --- .-. ... . / -.-. --- -.. ."
       "letter_numbers" -> "8 5 12 12 15 | 23 15 18 12 4"
+      "binary_ascii" -> "01001000 01101001"
+      "hex_ascii" -> "48 69 21"
+      "binary_unicode" -> "11100010 10011000 10000000"
+      "hex_unicode" -> "U+2600 U+0048 U+0069"
       "symbol_substitution" -> "☀♪Θ ♠Φ☎Θ"
       _ -> "Paste the cipher text here"
     end

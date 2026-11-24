@@ -77,6 +77,10 @@ defmodule Subcipher.Steps.CiphersTest do
     # Settings for the round trip of each cipher that can encode.
     @round_trip_params %{
       "caesar" => %{"shift" => 11},
+      "binary_ascii" => %{"width" => "7"},
+      "hex_ascii" => %{},
+      "binary_unicode" => %{"encoding" => "code_points"},
+      "hex_unicode" => %{"encoding" => "utf8"},
       "keyword_substitution" => %{"keyword" => "Zebras"},
       "vigenere" => %{"key" => "LEMON"},
       "atbash" => %{},

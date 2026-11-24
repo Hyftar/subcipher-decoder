@@ -103,12 +103,12 @@ defmodule SubcipherWeb.UserLive.Login do
 
     form = to_form(%{"email" => email}, as: "user")
 
-    {:ok, assign(socket, form: form, trigger_submit: false)}
+    socket |> assign(form: form, trigger_submit: false) |> wrap(:ok)
   end
 
   @impl true
   def handle_event("submit_password", _params, socket) do
-    {:noreply, assign(socket, :trigger_submit, true)}
+    socket |> assign(trigger_submit: true) |> wrap(:noreply)
   end
 
   def handle_event("submit_magic", %{"user" => %{"email" => email}}, socket) do
@@ -122,10 +122,10 @@ defmodule SubcipherWeb.UserLive.Login do
     info =
       "If your email is in our system, you will receive instructions for logging in shortly."
 
-    {:noreply,
-     socket
-     |> put_flash(:info, info)
-     |> push_navigate(to: ~p"/users/log-in")}
+    socket
+    |> put_flash(:info, info)
+    |> push_navigate(to: ~p"/users/log-in")
+    |> wrap(:noreply)
   end
 
   defp local_mail_adapter? do

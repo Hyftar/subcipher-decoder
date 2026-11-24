@@ -1,4 +1,4 @@
-defmodule SubcipherWeb.VisibilityComponents do
+defmodule SubcipherWeb.Components.VisibilityToggle do
   @moduledoc "The public / private switch of puzzles and algorithms."
   use Phoenix.Component
 

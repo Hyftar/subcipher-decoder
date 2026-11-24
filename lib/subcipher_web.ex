@@ -86,6 +86,8 @@ defmodule SubcipherWeb do
       import Phoenix.HTML
       # Core UI components
       import SubcipherWeb.CoreComponents
+      # wrap/2, to end pipelines in tagged tuples
+      import Subcipher.Util, only: [wrap: 2]
 
       # Common modules used in templates
       alias Phoenix.LiveView.JS

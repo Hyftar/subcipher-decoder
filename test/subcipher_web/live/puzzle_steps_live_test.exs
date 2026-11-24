@@ -255,7 +255,7 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
       {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
 
       # One tile per character, spaces included, in the input's order.
-      assert has_element?(view, "#anagram-#{step.id}[phx-hook=AnagramTiles]")
+      assert has_element?(view, "#anagram-#{step.id}[phx-hook$=AnagramTiles]")
       for i <- 0..5, do: assert(has_element?(view, "#tile-#{step.id}-#{i}"))
       assert output(view, step) =~ "I CORD"
 

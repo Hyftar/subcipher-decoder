@@ -45,7 +45,7 @@ defmodule SubcipherWeb.UserLive.Registration do
   @impl true
   def mount(_params, _session, %{assigns: %{current_scope: %{user: user}}} = socket)
       when not is_nil(user) do
-    {:ok, redirect(socket, to: SubcipherWeb.UserAuth.signed_in_path(socket))}
+    socket |> redirect(to: SubcipherWeb.UserAuth.signed_in_path(socket)) |> wrap(:ok)
   end
 
   def mount(_params, _session, socket) do
@@ -64,22 +64,22 @@ defmodule SubcipherWeb.UserLive.Registration do
             &url(~p"/users/log-in/#{&1}")
           )
 
-        {:noreply,
-         socket
-         |> put_flash(
-           :info,
-           "An email was sent to #{user.email}, please access it to confirm your account."
-         )
-         |> push_navigate(to: ~p"/users/log-in")}
+        socket
+        |> put_flash(
+          :info,
+          "An email was sent to #{user.email}, please access it to confirm your account."
+        )
+        |> push_navigate(to: ~p"/users/log-in")
+        |> wrap(:noreply)
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign_form(socket, changeset)}
+        socket |> assign_form(changeset) |> wrap(:noreply)
     end
   end
 
   def handle_event("validate", %{"user" => user_params}, socket) do
     changeset = Accounts.change_user_email(%User{}, user_params, validate_unique: false)
-    {:noreply, assign_form(socket, Map.put(changeset, :action, :validate))}
+    socket |> assign_form(Map.put(changeset, :action, :validate)) |> wrap(:noreply)
   end
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do

@@ -17,6 +17,12 @@ defmodule SubcipherWeb.Endpoint do
 
   plug SubcipherWeb.Plugs.HealthCheck
 
+  # Uploaded cipher pictures, from the uploads directory (`UPLOADS_DIR` in
+  # production, a volume; priv/static/uploads otherwise). Before the "/"
+  # Plug.Static below: in dev, the uploads are under priv/static but not in
+  # its :only list, and `raise_on_missing_only` would reject them.
+  plug Plug.Static, at: "/uploads", from: {Subcipher.Ciphers, :uploads_dir, []}
+
   # Serve at "/" the static files from "priv/static" directory.
   #
   # When code reloading is disabled (e.g., in production),
@@ -28,10 +34,6 @@ defmodule SubcipherWeb.Endpoint do
     gzip: not code_reloading?,
     only: SubcipherWeb.static_paths(),
     raise_on_missing_only: code_reloading?
-
-  # Uploaded cipher pictures, from the uploads directory (`UPLOADS_DIR` in
-  # production, a volume; priv/static/uploads otherwise).
-  plug Plug.Static, at: "/uploads", from: {Subcipher.Ciphers, :uploads_dir, []}
 
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.

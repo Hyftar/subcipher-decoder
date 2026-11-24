@@ -192,8 +192,11 @@ defmodule SubcipherWeb.CoreComponents do
     errors = if Phoenix.Component.used_input?(field), do: field.errors, else: []
 
     assigns
-    |> assign(field: nil, id: assigns.id || field.id)
-    |> assign(:errors, Enum.map(errors, &translate_error(&1)))
+    |> assign(
+      field: nil,
+      id: assigns.id || field.id,
+      errors: Enum.map(errors, &translate_error(&1))
+    )
     |> assign_new(:name, fn -> if assigns.multiple, do: field.name <> "[]", else: field.name end)
     |> assign_new(:value, fn -> field.value end)
     |> input()

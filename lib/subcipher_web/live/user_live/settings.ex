@@ -80,7 +80,7 @@ defmodule SubcipherWeb.UserLive.Settings do
           put_flash(socket, :error, "Email change link is invalid or it has expired.")
       end
 
-    {:ok, push_navigate(socket, to: ~p"/users/settings")}
+    socket |> push_navigate(to: ~p"/users/settings") |> wrap(:ok)
   end
 
   def mount(_params, _session, socket) do
@@ -90,12 +90,14 @@ defmodule SubcipherWeb.UserLive.Settings do
 
     socket =
       socket
-      |> assign(:current_email, user.email)
-      |> assign(:email_form, to_form(email_changeset))
-      |> assign(:password_form, to_form(password_changeset))
-      |> assign(:trigger_submit, false)
+      |> assign(
+        current_email: user.email,
+        email_form: to_form(email_changeset),
+        password_form: to_form(password_changeset),
+        trigger_submit: false
+      )
 
-    {:ok, socket}
+    wrap(socket, :ok)
   end
 
   @impl true
@@ -108,7 +110,7 @@ defmodule SubcipherWeb.UserLive.Settings do
       |> Map.put(:action, :validate)
       |> to_form()
 
-    {:noreply, assign(socket, email_form: email_form)}
+    socket |> assign(email_form: email_form) |> wrap(:noreply)
   end
 
   def handle_event("update_email", params, socket) do
@@ -125,10 +127,10 @@ defmodule SubcipherWeb.UserLive.Settings do
         )
 
         info = "A link to confirm your email change has been sent to the new address."
-        {:noreply, socket |> put_flash(:info, info)}
+        socket |> put_flash(:info, info) |> wrap(:noreply)
 
       changeset ->
-        {:noreply, assign(socket, :email_form, to_form(changeset, action: :insert))}
+        socket |> assign(email_form: to_form(changeset, action: :insert)) |> wrap(:noreply)
     end
   end
 
@@ -141,7 +143,7 @@ defmodule SubcipherWeb.UserLive.Settings do
       |> Map.put(:action, :validate)
       |> to_form()
 
-    {:noreply, assign(socket, password_form: password_form)}
+    socket |> assign(password_form: password_form) |> wrap(:noreply)
   end
 
   def handle_event("update_password", params, socket) do
@@ -151,10 +153,12 @@ defmodule SubcipherWeb.UserLive.Settings do
 
     case Accounts.change_user_password(user, user_params) do
       %{valid?: true} = changeset ->
-        {:noreply, assign(socket, trigger_submit: true, password_form: to_form(changeset))}
+        socket
+        |> assign(trigger_submit: true, password_form: to_form(changeset))
+        |> wrap(:noreply)
 
       changeset ->
-        {:noreply, assign(socket, password_form: to_form(changeset, action: :insert))}
+        socket |> assign(password_form: to_form(changeset, action: :insert)) |> wrap(:noreply)
     end
   end
 end

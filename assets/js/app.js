@@ -24,17 +24,12 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/subcipher"
 import topbar from "../vendor/topbar"
-import {GlyphDetector} from "./hooks/glyph_detector_hook"
-import {CipherKeys} from "./hooks/cipher_keys_hook"
-import {AnagramTiles} from "./hooks/anagram_tiles_hook"
-import {SymbolImage} from "./hooks/symbol_image_hook"
-import {GlyphTrim} from "./hooks/glyph_trim_hook"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, GlyphDetector, CipherKeys, AnagramTiles, SymbolImage, GlyphTrim},
+  hooks: {...colocatedHooks},
 })
 
 // Show progress bar on live navigation and form submits

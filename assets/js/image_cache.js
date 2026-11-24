@@ -1,4 +1,4 @@
-import { inkMask } from "../glyph_detector"
+import { inkMask } from "./glyph_detector"
 
 // Pictures and their black and white pass (ink mask), loaded once per path
 // and shared by the hooks that draw glyphs.

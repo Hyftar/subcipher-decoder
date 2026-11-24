@@ -30,11 +30,8 @@ defmodule Subcipher.Guesser do
   alias Subcipher.Steps.Alphabet
 
   alias Subcipher.Steps.Ciphers.{
+    Ascii,
     Atbash,
-    BinaryAscii,
-    BinaryUnicode,
-    HexAscii,
-    HexUnicode,
     Caesar,
     KeywordSubstitution,
     LetterNumbers,
@@ -43,6 +40,7 @@ defmodule Subcipher.Guesser do
     Reverse,
     Route,
     SymbolSubstitution,
+    Unicode,
     Vigenere
   }
 
@@ -52,10 +50,8 @@ defmodule Subcipher.Guesser do
     Atbash,
     Morse,
     LetterNumbers,
-    HexAscii,
-    BinaryAscii,
-    BinaryUnicode,
-    HexUnicode,
+    Ascii,
+    Unicode,
     Reverse,
     Caesar,
     KeywordSubstitution,
@@ -323,11 +319,9 @@ defmodule Subcipher.Guesser do
   # Dots and dashes either way round, letters spaced or run together.
   def key_space(Morse, _params, _text), do: KeySpace.choices(4)
   def key_space(LetterNumbers, _params, _text), do: KeySpace.choices(2)
-  def key_space(HexAscii, _params, _text), do: 0.0
-  # 8 or 7 bits; UTF-8 bytes or code points.
-  def key_space(BinaryAscii, _params, _text), do: KeySpace.choices(2)
-  def key_space(BinaryUnicode, _params, _text), do: KeySpace.choices(2)
-  def key_space(HexUnicode, _params, _text), do: KeySpace.choices(2)
+  # Decimal, hexadecimal or binary (8 or 7 bits); UTF-8 bytes or code points.
+  def key_space(Ascii, _params, _text), do: KeySpace.choices(4)
+  def key_space(Unicode, _params, _text), do: KeySpace.choices(3 * 2)
   def key_space(Reverse, _params, _text), do: KeySpace.choices(3)
   def key_space(Caesar, _params, _text), do: KeySpace.choices(26)
   def key_space(Route, _params, _text), do: KeySpace.choices(19 * 16)

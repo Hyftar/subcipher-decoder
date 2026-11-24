@@ -10,11 +10,8 @@ defmodule Subcipher.GuesserSamples do
   alias Subcipher.English
 
   alias Subcipher.Steps.Ciphers.{
+    Ascii,
     Atbash,
-    BinaryAscii,
-    BinaryUnicode,
-    HexAscii,
-    HexUnicode,
     Caesar,
     KeywordSubstitution,
     LetterNumbers,
@@ -23,6 +20,7 @@ defmodule Subcipher.GuesserSamples do
     Reverse,
     Route,
     SymbolSubstitution,
+    Unicode,
     Vigenere
   }
 
@@ -58,10 +56,8 @@ defmodule Subcipher.GuesserSamples do
       Atbash,
       Morse,
       LetterNumbers,
-      BinaryAscii,
-      HexAscii,
-      BinaryUnicode,
-      HexUnicode,
+      Ascii,
+      Unicode,
       Reverse,
       Caesar,
       KeywordSubstitution,
@@ -81,7 +77,7 @@ defmodule Subcipher.GuesserSamples do
     for _ <- 1..count do
       plain = plain_text(letters)
       # On ASCII text, the Unicode ciphers write what the ASCII ones do.
-      plain = if cipher in [BinaryUnicode, HexUnicode], do: plain <> " ☀", else: plain
+      plain = if cipher == Unicode, do: plain <> " ☀", else: plain
       params = random_params(cipher)
       %{cipher: cipher, params: params, plain: plain, text: cipher.encode(plain, params)}
     end
@@ -106,10 +102,13 @@ defmodule Subcipher.GuesserSamples do
   end
 
   defp random_params(Atbash), do: %{}
-  defp random_params(BinaryAscii), do: %{width: Enum.random(["8", "7"])}
-  defp random_params(HexAscii), do: %{}
-  defp random_params(BinaryUnicode), do: %{encoding: Enum.random(["utf8", "code_points"])}
-  defp random_params(HexUnicode), do: %{encoding: Enum.random(["utf8", "code_points"])}
+
+  defp random_params(Ascii),
+    do: %{base: Enum.random(~w(10 16 2)), width: Enum.random(["8", "7"])}
+
+  defp random_params(Unicode),
+    do: %{base: Enum.random(~w(10 16 2)), encoding: Enum.random(["utf8", "code_points"])}
+
   defp random_params(Morse), do: %{dot: "", dash: "", letters: "spaced"}
   defp random_params(LetterNumbers), do: %{first: Enum.random(["0", "1"])}
   defp random_params(Reverse), do: %{mode: Enum.random(~w(lines words text))}

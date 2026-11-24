@@ -466,9 +466,9 @@ defmodule Subcipher.Steps.Ciphers.Morse do
     end
   end
 
-  defp binary_bytes?(input) do
-    is_binary(Subcipher.Steps.Ciphers.BinaryAscii.recognize(input)) or
-      is_binary(Subcipher.Steps.Ciphers.BinaryUnicode.recognize(input))
+  defp character_codes?(input) do
+    is_binary(Subcipher.Steps.Ciphers.Ascii.recognize(input)) or
+      is_binary(Subcipher.Steps.Ciphers.Unicode.recognize(input))
   end
 
   @doc """
@@ -482,8 +482,8 @@ defmodule Subcipher.Steps.Ciphers.Morse do
     symbols = distinct_symbols(input)
     usual_symbols? = Enum.all?(symbols, &(&1 in @usual_symbols))
 
-    # 0s and 1s decoding as bytes are binary, not Morse.
-    with false <- binary_bytes?(input),
+    # 0s and 1s decoding as character codes are binary, not Morse.
+    with false <- character_codes?(input),
          [best | _] <- suggestions(input, %{}),
          output = decode(input, best.params),
          {decoded, total} when total > 0 and decoded == total <- code_counts(input, output) do

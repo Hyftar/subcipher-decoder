@@ -15,6 +15,7 @@ defmodule SubcipherWeb.Components.StepHeader do
   attr :can_move_up, :boolean, required: true
   attr :can_move_down, :boolean, required: true
   attr :can_delete, :boolean, required: true
+  attr :owner, :boolean, default: true, doc: "false: the cipher only, no controls"
 
   def step_header(assigns) do
     assigns = assign(assigns, type_form: to_form(%{"type" => assigns.step.type}, as: :step_type))
@@ -25,7 +26,11 @@ defmodule SubcipherWeb.Components.StepHeader do
         <span class="grid place-items-center size-8 rounded-full bg-primary text-primary-content text-sm font-semibold">
           {@number}
         </span>
+        <h2 :if={!@owner} id={"step-type-#{@step.id}"} class="flex-1 min-w-48 font-semibold">
+          {@cipher.name()}
+        </h2>
         <.form
+          :if={@owner}
           for={@type_form}
           id={"step-type-form-#{@step.id}"}
           phx-change="change_step_type"
@@ -48,7 +53,7 @@ defmodule SubcipherWeb.Components.StepHeader do
             </option>
           </select>
         </.form>
-        <div class="flex items-center">
+        <div :if={@owner} class="flex items-center">
           <button
             type="button"
             id={"move-step-up-#{@step.id}"}

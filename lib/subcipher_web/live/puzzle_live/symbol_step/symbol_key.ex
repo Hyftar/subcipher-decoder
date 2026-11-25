@@ -1,7 +1,7 @@
 defmodule SubcipherWeb.PuzzleLive.SymbolStep.SymbolKey do
   @moduledoc """
   The symbols of a pictures puzzle, most frequent first, each with its
-  frequency and the letter it stands for.
+  frequency and the letter it stands for (editable by the owner only).
   """
   use SubcipherWeb, :html
 
@@ -12,6 +12,7 @@ defmodule SubcipherWeb.PuzzleLive.SymbolStep.SymbolKey do
   attr :selected_symbol_id, :any, required: true
   attr :duplicates, :any, required: true
   attr :english_frequency, :string, required: true
+  attr :owner, :boolean, default: true, doc: "false: letters are shown, not editable"
 
   def symbol_key(assigns) do
     ~H"""
@@ -19,7 +20,9 @@ defmodule SubcipherWeb.PuzzleLive.SymbolStep.SymbolKey do
       <div class="flex items-center justify-between">
         <h2 class="font-semibold">Symbol key</h2>
         <button
+          :if={@owner}
           type="button"
+          id="reset-letters"
           class="btn btn-ghost btn-sm"
           phx-click="reset_letters"
           data-confirm="Clear every letter?"
@@ -58,8 +61,22 @@ defmodule SubcipherWeb.PuzzleLive.SymbolStep.SymbolKey do
               {if entry.symbol.ignored, do: "ignored", else: "#{Float.round(entry.frequency, 1)}%"}
             </span>
           </button>
+          <span
+            :if={!@owner and !entry.symbol.ignored}
+            id={"letter-#{entry.symbol.id}"}
+            class={[
+              "grid place-items-center min-w-14 h-8 px-2 rounded-md font-mono uppercase text-base",
+              entry.symbol.letter && !MapSet.member?(@duplicates, entry.symbol.letter) &&
+                "text-primary font-semibold",
+              entry.symbol.letter && MapSet.member?(@duplicates, entry.symbol.letter) &&
+                "text-warning font-semibold",
+              !entry.symbol.letter && "text-base-content/30"
+            ]}
+          >
+            {entry.symbol.letter || "_"}
+          </span>
           <form
-            :if={!entry.symbol.ignored}
+            :if={@owner and !entry.symbol.ignored}
             phx-change="assign"
             phx-submit="assign"
             id={"assign-#{entry.symbol.id}"}

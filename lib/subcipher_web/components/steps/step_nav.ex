@@ -5,8 +5,9 @@ defmodule SubcipherWeb.Components.StepNav do
   attr :puzzle, :any, required: true
   attr :nodes, :list, required: true, doc: "[%{number:, label:, icon:}] in order"
   attr :selected, :any, required: true, doc: "number of the shown step, or :new"
+  attr :owner, :boolean, default: true, doc: "the current user may add steps"
 
-  @doc "Steps as connected circles; the last one adds a step."
+  @doc "Steps as connected circles; for the owner, the last one adds a step."
   def step_nav(assigns) do
     ~H"""
     <nav id="step-nav" aria-label="Decoding steps" class="overflow-x-auto">
@@ -45,10 +46,14 @@ defmodule SubcipherWeb.Components.StepNav do
               {node.label}
             </span>
           </li>
-          <li aria-hidden="true" class="flex-1 min-w-6 h-0.5 mt-5 -mx-7 bg-base-300 rounded-full">
+          <li
+            :if={@owner or node != List.last(@nodes)}
+            aria-hidden="true"
+            class="flex-1 min-w-6 h-0.5 mt-5 -mx-7 bg-base-300 rounded-full"
+          >
           </li>
         <% end %>
-        <li class="flex flex-col items-center gap-1.5 w-24">
+        <li :if={@owner} class="flex flex-col items-center gap-1.5 w-24">
           <.link
             patch={~p"/puzzles/#{@puzzle}?step=new"}
             id="step-nav-new"

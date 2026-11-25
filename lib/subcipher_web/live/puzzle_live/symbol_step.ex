@@ -3,6 +3,9 @@ defmodule SubcipherWeb.PuzzleLive.SymbolStep do
   Step 1 of a pictures puzzle: the symbols of the pictures, substituted by
   hand, with the symbol key. Keyboard shortcuts come from the `.CipherKeys`
   hook.
+
+  Visitors (`owner={false}`) see the cipher text, its output, the symbol key
+  and the original pictures, without any edit control.
   """
   use SubcipherWeb, :html
 
@@ -29,6 +32,7 @@ defmodule SubcipherWeb.PuzzleLive.SymbolStep do
   attr :english_frequency, :string, required: true
   attr :symbol_suggestions, :list, required: true
   attr :symbol_solver, :map, required: true
+  attr :owner, :boolean, default: true, doc: "false: read-only, without any edit control"
 
   def symbol_step(assigns) do
     ~H"""
@@ -46,7 +50,7 @@ defmodule SubcipherWeb.PuzzleLive.SymbolStep do
     >
       <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div class="space-y-6 min-w-0">
-          <div class="space-y-3">
+          <div :if={@owner} class="space-y-3">
             <.add_picture_panel puzzle={@puzzle} current_scope={@current_scope} />
             <.suggestions_panel
               id="symbols"
@@ -56,6 +60,7 @@ defmodule SubcipherWeb.PuzzleLive.SymbolStep do
           </div>
 
           <.selection_bar
+            :if={@owner}
             symbol={@symbols[@selected_symbol_id]}
             glyph_id={@selected_glyph_id}
             merging={@merging}
@@ -65,7 +70,7 @@ defmodule SubcipherWeb.PuzzleLive.SymbolStep do
           />
 
           <.glyph_panel
-            :if={@show_glyphs and @selected_symbol_id != nil and !@merging}
+            :if={@owner and @show_glyphs and @selected_symbol_id != nil and !@merging}
             entry={Enum.find(@key, &(&1.symbol.id == @selected_symbol_id))}
             glyph_id={@edited_glyph_id || @selected_glyph_id}
             images={@images}
@@ -79,6 +84,7 @@ defmodule SubcipherWeb.PuzzleLive.SymbolStep do
             selected_glyph_id={@selected_glyph_id}
             merging={@merging}
             duplicates={@duplicates}
+            owner={@owner}
           />
 
           <section
@@ -97,6 +103,7 @@ defmodule SubcipherWeb.PuzzleLive.SymbolStep do
             symbols={@symbols}
             selected_symbol_id={@selected_symbol_id}
             tolerance={@tolerance}
+            owner={@owner}
           />
         </div>
 
@@ -106,6 +113,7 @@ defmodule SubcipherWeb.PuzzleLive.SymbolStep do
           selected_symbol_id={@selected_symbol_id}
           duplicates={@duplicates}
           english_frequency={@english_frequency}
+          owner={@owner}
         />
       </div>
       <script :type={Phoenix.LiveView.ColocatedHook} name=".CipherKeys">

@@ -2,6 +2,7 @@ defmodule SubcipherWeb.Components.StepSettings do
   @moduledoc """
   The settings form of a step, generated from its cipher's `fields/0` (see
   `SubcipherWeb.Components.ParamField`), with the cipher's summary of them.
+  Visitors (`owner={false}`) only see the summary.
   """
   use SubcipherWeb, :html
 
@@ -13,6 +14,23 @@ defmodule SubcipherWeb.Components.StepSettings do
   attr :cipher, :atom, required: true
   attr :result, :map, required: true, doc: "an entry of Subcipher.Steps.run/2"
   attr :form, :any, required: true
+  attr :owner, :boolean, default: true, doc: "false: the summary only, no form"
+
+  def step_settings(%{owner: false} = assigns) do
+    assigns = assign(assigns, summary: summary(assigns.cipher, assigns.result.params))
+
+    ~H"""
+    <div :if={@summary} class="space-y-2">
+      <h3 class="text-xs font-semibold uppercase tracking-wider text-base-content/50">
+        Settings
+      </h3>
+      <pre
+        id={"step-summary-#{@step.id}"}
+        class="text-xs font-mono text-base-content/60 whitespace-pre-wrap"
+      >{@summary}</pre>
+    </div>
+    """
+  end
 
   def step_settings(assigns) do
     assigns = assign(assigns, summary: summary(assigns.cipher, assigns.result.params))

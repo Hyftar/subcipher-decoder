@@ -82,16 +82,59 @@ defmodule SubcipherWeb.SharingTest do
       refute has_element?(view, "#visibility")
       refute has_element?(view, "#make-algorithm")
 
+      # Only the cipher text, output, symbol key and pictures: no edit control.
+      assert has_element?(view, "#cipher-text")
+      assert has_element?(view, "#plaintext")
+      assert has_element?(view, "#symbol-key")
+      assert has_element?(view, "#pictures")
+      refute has_element?(view, "#add-picture")
+      refute has_element?(view, "#suggestions-symbols")
+      refute has_element?(view, "#keyboard-help")
+      refute has_element?(view, "#reset-letters")
+      refute has_element?(view, "#regroup-form")
+      refute has_element?(view, "#symbol-key form")
+      refute has_element?(view, "#step-nav-new")
+
       # Selecting and moving around work; typing a letter changes nothing.
       [first | _] = puzzle.glyphs
       view |> element("#glyph-#{first.id}") |> render_click()
-      assert has_element?(view, "#selection-bar")
+      assert has_element?(view, "#symbol-#{first.symbol_id}.bg-primary\\/10")
+      refute has_element?(view, "#selection-bar")
+      refute has_element?(view, "#glyphs-button")
       view |> element("#puzzle") |> render_hook("key", %{"key" => "t"})
       view |> element("#puzzle") |> render_hook("key", %{"key" => "ArrowRight"})
       assert Enum.all?(Ciphers.get_puzzle!(puzzle.id).symbols, &is_nil(&1.letter))
 
       assert render_hook(view, "toggle_public", %{}) =~ "read-only"
       assert Ciphers.get_puzzle!(puzzle.id).public
+    end
+
+    test "someone else's public text puzzle shows its steps without edit controls", %{conn: conn} do
+      owner = user_scope_fixture()
+
+      {:ok, puzzle} =
+        Ciphers.create_text_puzzle(owner, %{title: "Note", input_text: "Khoor"}, "caesar")
+
+      {:ok, _} = Steps.update_params(hd(puzzle.steps), %{"shift" => "3"})
+      {:ok, puzzle} = Ciphers.set_public(Ciphers.get_puzzle!(puzzle.id), true)
+      [step] = puzzle.steps
+
+      {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}")
+
+      assert view |> element("#step-input-#{step.id}") |> render() =~ "Khoor"
+      assert view |> element("#step-output-#{step.id}") |> render() =~ "Hello"
+      refute has_element?(view, "#input-form")
+      refute has_element?(view, "#step-type-form-#{step.id}")
+      refute has_element?(view, "#step-form-#{step.id}")
+      refute has_element?(view, "#move-step-up-#{step.id}")
+      refute has_element?(view, "#delete-step-#{step.id}")
+      refute has_element?(view, "#suggestions-#{step.id}")
+      refute has_element?(view, "#step-nav-new")
+
+      # The "add a step" view isn't reachable either.
+      {:ok, view, _} = live(conn, ~p"/puzzles/#{puzzle}?step=new")
+      refute has_element?(view, "#add-step")
+      assert has_element?(view, "#step-#{step.id}")
     end
 
     test "someone else's public algorithm can be used, not edited", %{conn: conn} do

@@ -1,7 +1,8 @@
 defmodule SubcipherWeb.PuzzleLive.Pictures.Panel do
   @moduledoc """
   The original pictures of a puzzle with the symbols detected in them
-  (collapsible), and the regrouping of symbols by tolerance.
+  (collapsible), and, for the owner, reordering and removing pictures and
+  regrouping symbols by tolerance.
   """
   use SubcipherWeb, :html
 
@@ -13,6 +14,7 @@ defmodule SubcipherWeb.PuzzleLive.Pictures.Panel do
   attr :symbols, :map, required: true, doc: "by id"
   attr :selected_symbol_id, :any, required: true
   attr :tolerance, :integer, required: true, doc: "of the grouping, in thousandths"
+  attr :owner, :boolean, default: true, doc: "false: the pictures only, no controls"
 
   def pictures_panel(assigns) do
     ~H"""
@@ -32,7 +34,7 @@ defmodule SubcipherWeb.PuzzleLive.Pictures.Panel do
           class="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-base-content/50"
         >
           Picture {section.index}
-          <span class="flex items-center gap-1">
+          <span :if={@owner} class="flex items-center gap-1">
             <.picture_controls
               section={section}
               count={length(@sections)}
@@ -75,6 +77,7 @@ defmodule SubcipherWeb.PuzzleLive.Pictures.Panel do
         </div>
       </figure>
       <.form
+        :if={@owner}
         for={%{}}
         id="regroup-form"
         phx-submit="regroup"

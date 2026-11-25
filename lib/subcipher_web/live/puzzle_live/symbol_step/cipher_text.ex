@@ -14,6 +14,7 @@ defmodule SubcipherWeb.PuzzleLive.SymbolStep.CipherText do
   attr :selected_glyph_id, :any, required: true
   attr :merging, :boolean, required: true
   attr :duplicates, :any, required: true, doc: "letters used by several symbols"
+  attr :owner, :boolean, default: true, doc: "false: pictures can't be reordered"
 
   def cipher_text(assigns) do
     ~H"""
@@ -32,7 +33,7 @@ defmodule SubcipherWeb.PuzzleLive.SymbolStep.CipherText do
           class="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-base-content/50"
         >
           Picture {section.index}
-          <.picture_controls section={section} count={length(@sections)} />
+          <.picture_controls :if={@owner} section={section} count={length(@sections)} />
         </div>
         <div
           :for={line <- section.lines}

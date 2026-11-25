@@ -1,7 +1,8 @@
 defmodule SubcipherWeb.Components.StepCard do
   @moduledoc """
   A decoding step of a puzzle: its cipher, input, settings, suggestions and
-  output.
+  output. Read-only for visitors (`owner={false}`): input, settings summary
+  and output only.
 
   Parameter forms are generated from each cipher's `fields/0` (see
   `SubcipherWeb.Components.ParamField`).
@@ -32,6 +33,7 @@ defmodule SubcipherWeb.Components.StepCard do
   attr :can_move_down, :boolean, required: true
   attr :can_delete, :boolean, required: true
   attr :input_form, :any, default: nil, doc: "editable puzzle input (first step of a text puzzle)"
+  attr :owner, :boolean, default: true, doc: "false: read-only, without any edit control"
 
   def step_card(assigns) do
     assigns = assign(assigns, step: assigns.result.step, cipher: assigns.result.cipher)
@@ -48,10 +50,18 @@ defmodule SubcipherWeb.Components.StepCard do
         can_move_up={@can_move_up}
         can_move_down={@can_move_down}
         can_delete={@can_delete}
+        owner={@owner}
       />
-      <.step_input number={@number} step={@step} input={@result.input} input_form={@input_form} />
+      <.step_input
+        number={@number}
+        step={@step}
+        input={@result.input}
+        input_form={@input_form}
+        owner={@owner}
+      />
       <.step_settings
         :if={@cipher.fields() != []}
+        owner={@owner}
         step={@step}
         cipher={@cipher}
         result={@result}
@@ -59,7 +69,7 @@ defmodule SubcipherWeb.Components.StepCard do
       />
 
       <.suggestions_panel
-        :if={@suggestions || @solver_state}
+        :if={@owner and (@suggestions || @solver_state)}
         id={to_string(@step.id)}
         class="rounded-xl border border-base-300"
         suggestions={Enum.map(@suggestions || [], &Map.put(&1, :use, use_params(@step, &1)))}

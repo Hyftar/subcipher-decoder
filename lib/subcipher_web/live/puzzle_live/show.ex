@@ -68,8 +68,9 @@ defmodule SubcipherWeb.PuzzleLive.Show do
   def handle_params(params, _uri, socket) do
     selected =
       case params["step"] do
+        # Adding a step is for the owner only; visitors land on the first one.
         "new" ->
-          :new
+          if socket.assigns.owner?, do: :new, else: 1
 
         nil ->
           1
@@ -97,9 +98,10 @@ defmodule SubcipherWeb.PuzzleLive.Show do
   @suggestion_events ~w(solve apply_letters)
   @puzzle_events ~w(toggle_public make_algorithm rename_blur rename)
 
-  # What visitors of a public puzzle may do: look around (select, navigate,
-  # open panels). Every other event changes the puzzle: owner only.
-  @viewer_events ~w(select_glyph select_symbol deselect key toggle_glyphs edit_glyph glyph_view)
+  # What visitors of a public puzzle may do: look around (select, navigate).
+  # Every other event changes the puzzle (or opens a panel to change it):
+  # owner only.
+  @viewer_events ~w(select_glyph select_symbol deselect key)
   @navigation_keys ~w(ArrowLeft ArrowRight ArrowUp ArrowDown Tab Escape)
 
   @impl true
@@ -168,13 +170,14 @@ defmodule SubcipherWeb.PuzzleLive.Show do
           symbol_count={@symbol_count}
         />
         <.read_only_notice :if={!@owner?} />
-        <.step_nav puzzle={@puzzle} nodes={@nodes} selected={@selected_step} />
+        <.step_nav puzzle={@puzzle} nodes={@nodes} selected={@selected_step} owner={@owner?} />
 
         <%= cond do %>
           <% @selected_step == :new -> %>
             <.add_step_panel />
           <% @current_entry -> %>
             <.step_card
+              owner={@owner?}
               number={@current_entry.number}
               result={@current_entry.result}
               form={@current_entry.form}
@@ -190,6 +193,7 @@ defmodule SubcipherWeb.PuzzleLive.Show do
             />
           <% true -> %>
             <.symbol_step
+              owner={@owner?}
               puzzle={@puzzle}
               selected_symbol_id={@selected_symbol_id}
               selected_glyph_id={@selected_glyph_id}

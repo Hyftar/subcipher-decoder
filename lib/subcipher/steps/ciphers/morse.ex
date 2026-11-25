@@ -80,7 +80,7 @@ defmodule Subcipher.Steps.Ciphers.Morse do
 
   @impl true
   def osrs_usage,
-    do: "Easter eggs all over Gielinor: bank booths, gravestones, Alliance records, contracts…"
+    do: "Easter eggs all over Gielinor: bank booths, gravestones, Alliance records, contracts..."
 
   @impl true
   def fields do

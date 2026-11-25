@@ -12,6 +12,10 @@ defmodule SubcipherWeb.Components.CipherGrid do
   attr :class, :string, default: "sm:grid-cols-2"
   attr :ciphers, :list, default: nil, doc: "the ciphers offered (default: all)"
 
+  attr :locked, :list,
+    default: [],
+    doc: "types of the ciphers that need an account: shown with a lock"
+
   @doc "Every cipher type as a card; clicking one sends `event` with its type."
   def cipher_grid(assigns) do
     ~H"""
@@ -30,16 +34,23 @@ defmodule SubcipherWeb.Components.CipherGrid do
             <.icon
               :if={:pictures in cipher.input_kinds()}
               name="hero-photo"
-              class="size-4 text-base-content/40"
+              class="size-6 text-base-content/40"
             />
           </span>
           <.icon
-            name={@icon}
-            class="size-5 shrink-0 text-base-content/30 group-hover:text-primary transition-colors"
+            name={if cipher.type() in @locked, do: "hero-lock-closed", else: @icon}
+            class="size-6 shrink-0 text-base-content/30 group-hover:text-primary transition-colors"
           />
         </span>
         <span class="block mt-1 text-sm text-base-content/60">{cipher.description()}</span>
         <.osrs_usage cipher={cipher} class="mt-2" />
+        <span
+          :if={cipher.type() in @locked}
+          id={@id_prefix <> cipher.type() <> "-locked"}
+          class="mt-2 inline-flex items-center gap-1.5 self-start rounded-full bg-base-200 px-2 py-0.5 text-xs text-base-content/60"
+        >
+          <.icon name="hero-user-circle" class="size-3.5" /> Log in to upload pictures
+        </span>
       </button>
     </div>
     """

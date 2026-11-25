@@ -1,5 +1,5 @@
 defmodule SubcipherWeb.PuzzleLive.Index.SignUpPrompt do
-  @moduledoc "Invites visitors to create an account to start decoding."
+  @moduledoc "Invites visitors to create an account to keep their work."
   use SubcipherWeb, :html
 
   def sign_up_prompt(assigns) do
@@ -12,10 +12,11 @@ defmodule SubcipherWeb.PuzzleLive.Index.SignUpPrompt do
         <.icon name="hero-key" class="size-6" />
       </div>
       <div class="space-y-1">
-        <h2 class="text-lg font-semibold">Create an account to start decoding</h2>
+        <h2 class="text-lg font-semibold">Create an account to keep your work</h2>
         <p class="text-sm text-base-content/70">
-          Your puzzles and algorithms are private unless you share them. Sign up with
-          your email: we send you a link, no password needed.
+          Every cipher below can be tried without one. Sign up to save puzzles, decode
+          pictures of symbols, and make algorithms; they stay private unless you share them.
+          We email you a link, no password needed.
         </p>
       </div>
       <div class="flex flex-wrap gap-2">

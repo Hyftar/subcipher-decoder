@@ -22,7 +22,10 @@ defmodule SubcipherWeb.SharingTest do
 
       {:ok, view, _} = live(conn, ~p"/")
       assert has_element?(view, "#sign-up-prompt")
-      refute has_element?(view, "#choose-cipher")
+      # Ciphers can be tried without an account, except from pictures.
+      assert has_element?(view, "#choose-cipher")
+      assert has_element?(view, "#new-cipher-symbol_substitution-locked")
+      refute has_element?(view, "#new-cipher-caesar-locked")
       assert has_element?(view, "#public-puzzle-#{public.id}")
       refute has_element?(view, "#public-puzzle-#{private.id}")
       assert has_element?(view, "#public-algorithm-#{algorithm.id}")

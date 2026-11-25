@@ -63,8 +63,11 @@ defmodule SubcipherWeb.Router do
       live "/users/log-in", UserLive.Login, :new
       live "/users/log-in/:token", UserLive.Confirmation, :new
       # Open to everyone: public puzzles and algorithms can be seen without an
-      # account; the pages check who may see and change each one.
+      # account; the pages check who may see and change each one. A cipher
+      # opens as an unsaved algorithm, to try without an account (saving it
+      # as a puzzle needs one).
       live "/", PuzzleLive.Index, :index
+      live "/ciphers/:type", AlgorithmLive.Show, :cipher
       live "/puzzles/:id", PuzzleLive.Show, :show
       live "/algorithms/:id", AlgorithmLive.Show, :show
     end

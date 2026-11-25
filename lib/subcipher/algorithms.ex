@@ -15,6 +15,10 @@ defmodule Subcipher.Algorithms do
       algorithm ends with the symbols of its key.
 
   Both return the trace of the text through the steps.
+
+  A draft (`new_draft/2`) is an algorithm that isn't saved: a cipher to try
+  without an account. It is edited like the others, its changes kept in
+  memory, and can be saved as a puzzle (`save_as_puzzle/3`).
   """
 
   import Ecto.Query, warn: false
@@ -135,6 +139,34 @@ defmodule Subcipher.Algorithms do
     end
   end
 
+  @doc """
+  An unsaved text algorithm (a draft) with one step of cipher `type`, its
+  settings taken from `params` when they are valid (else the defaults).
+  Returns `{:ok, draft}`, or `{:error, :unknown_cipher}`.
+  """
+  def new_draft(type, params \\ %{}) do
+    with {:ok, step} <- new_step(type) do
+      draft = %Algorithm{
+        title: Steps.cipher!(type).name(),
+        input_kind: "text",
+        steps: [step]
+      }
+
+      case update_step_params(draft, 0, params) do
+        {:ok, draft} -> {:ok, draft}
+        {:error, _} -> {:ok, draft}
+      end
+    end
+  end
+
+  @doc """
+  Saves `draft`'s steps as a text puzzle of the scope's user, decoding
+  `attrs`' input_text (with its title). See `Ciphers.create_text_puzzle_with_steps/3`.
+  """
+  def save_as_puzzle(%Scope{} = scope, %Algorithm{} = draft, attrs) do
+    Ciphers.create_text_puzzle_with_steps(scope, attrs, draft.steps)
+  end
+
   ## Editing (the steps are numbered from 0 here, in decoding order)
 
   def rename(%Algorithm{} = algorithm, title) do
@@ -228,10 +260,13 @@ defmodule Subcipher.Algorithms do
     end
   end
 
+  # A draft isn't saved: its changes are only applied.
   defp update_steps(algorithm, steps, changes \\ []) do
-    algorithm
-    |> Ecto.Changeset.change([steps: steps] ++ changes)
-    |> Repo.update()
+    changeset = Ecto.Changeset.change(algorithm, [steps: steps] ++ changes)
+
+    if Algorithm.draft?(algorithm),
+      do: {:ok, Ecto.Changeset.apply_changes(changeset)},
+      else: Repo.update(changeset)
   end
 
   def delete_algorithm(%Algorithm{} = algorithm) do

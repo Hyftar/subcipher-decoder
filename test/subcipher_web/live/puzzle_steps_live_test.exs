@@ -161,24 +161,24 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
   end
 
   describe "text puzzles" do
-    test "choosing a text cipher asks for the cipher text", %{conn: conn, scope: scope} do
+    test "choosing a text cipher opens it, then saves it as a puzzle", %{conn: conn, scope: scope} do
       {:ok, view, _} = live(conn, ~p"/")
-      view |> element("#new-cipher-caesar") |> render_click()
-      assert_patch(view, ~p"/?cipher=caesar")
-      assert has_element?(view, "#new-puzzle-input", "Caesar cipher")
-      refute has_element?(view, "#new-puzzle-form")
-      # Only symbol substitution can start from pictures.
-      refute has_element?(view, "#use-input-pictures")
+
+      {:ok, view, _} =
+        view |> element("#new-cipher-caesar") |> render_click() |> follow_redirect(conn)
+
+      assert has_element?(view, "#draft-label")
+      assert has_element?(view, "#steps-editor")
+      view |> form("#text-form", %{text: "Wkh txlfn eurzq ira"}) |> render_change()
 
       {:ok, view, _} =
         view
-        |> form("#new-text-puzzle-form",
-          puzzle: %{title: "Note", input_text: "Wkh txlfn eurzq ira"}
-        )
+        |> form("#save-puzzle-form", puzzle: %{title: "Note"})
         |> render_submit()
         |> follow_redirect(conn)
 
       [%{puzzle: puzzle}] = Ciphers.list_puzzles(scope)
+      assert puzzle.title == "Note"
       [step] = Steps.list_steps(puzzle)
       assert step.type == "caesar"
 
@@ -208,24 +208,33 @@ defmodule SubcipherWeb.PuzzleStepsLiveTest do
       assert [%{type: "symbol_substitution"}] = Steps.list_steps(puzzle)
     end
 
-    test "change cipher goes back to the choice; unknown ciphers are ignored", %{conn: conn} do
-      {:ok, view, _} = live(conn, ~p"/?cipher=vigenere")
+    test "change cipher goes back to the choice; other ciphers open on their page", %{conn: conn} do
+      {:ok, view, _} = live(conn, ~p"/?cipher=symbol_substitution")
       view |> element("#change-cipher") |> render_click()
       assert_patch(view, ~p"/")
       assert has_element?(view, "#choose-cipher")
 
       {:ok, view, _} = live(conn, ~p"/?cipher=enigma")
       assert has_element?(view, "#choose-cipher")
+
+      assert {:error, {:live_redirect, %{to: "/ciphers/vigenere"}}} =
+               live(conn, ~p"/?cipher=vigenere")
     end
 
     test "require a text", %{conn: conn, scope: scope} do
-      {:ok, view, _} = live(conn, ~p"/?cipher=caesar")
+      {:ok, view, _} = live(conn, ~p"/?cipher=symbol_substitution&input=text")
 
       view
       |> form("#new-text-puzzle-form", puzzle: %{title: "Empty", input_text: ""})
       |> render_submit()
 
       assert has_element?(view, "#new-text-puzzle-form", "can't be blank")
+
+      # An opened cipher can't be saved without one.
+      {:ok, view, _} = live(conn, ~p"/ciphers/caesar")
+      assert has_element?(view, "#save-puzzle[disabled]")
+      assert has_element?(view, "#save-needs-text")
+
       assert Ciphers.list_puzzles(scope) == []
     end
 

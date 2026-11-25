@@ -17,7 +17,10 @@ defmodule SubcipherWeb.PuzzleLive.Index do
       page_title: "Puzzles",
       text_form: to_form(Ciphers.change_text_puzzle()),
       new_algorithm: false,
-      guess_choice: nil
+      guess_choice: nil,
+      cipher: nil,
+      input_kind: nil,
+      input_kinds: []
     )
     |> Guessing.mount()
     |> assign_lists()
@@ -37,19 +40,34 @@ defmodule SubcipherWeb.PuzzleLive.Index do
     )
   end
 
-  # ?cipher=TYPE: the cipher of the new puzzle (its first step), then the
-  # input it needs. ?input=text|pictures picks among the cipher's input
-  # kinds (Cipher.input_kinds/0), the first one by default.
+  # ?cipher=TYPE: a cipher that starts from pictures (symbol substitution:
+  # they are uploaded, so an account is needed), then the input it needs.
+  # ?input=text|pictures picks among the cipher's input kinds
+  # (Cipher.input_kinds/0), the first one by default. Other ciphers open on
+  # their own page, without an account.
   @impl true
   def handle_params(params, _uri, socket) do
-    cipher =
-      case Steps.fetch_cipher(params["cipher"] || "") do
-        {:ok, cipher} -> cipher
-        :error -> nil
-      end
+    case Steps.fetch_cipher(params["cipher"] || "") do
+      {:ok, cipher} ->
+        cond do
+          not pictures?(cipher) ->
+            socket |> push_navigate(to: ~p"/ciphers/#{cipher.type()}") |> wrap(:noreply)
 
+          !socket.assigns.current_scope ->
+            socket |> login_to_upload() |> wrap(:noreply)
+
+          true ->
+            socket |> assign_new_puzzle(cipher, params["input"]) |> wrap(:noreply)
+        end
+
+      :error ->
+        socket |> assign_new_puzzle(nil, nil) |> wrap(:noreply)
+    end
+  end
+
+  defp assign_new_puzzle(socket, cipher, input) do
     kinds = if cipher, do: Enum.map(cipher.input_kinds(), &to_string/1), else: []
-    input = if params["input"] in kinds, do: params["input"], else: List.first(kinds)
+    input = if input in kinds, do: input, else: List.first(kinds)
 
     # A guess chosen for this cipher: its text fills the form, its settings
     # are applied to the new puzzle.
@@ -57,21 +75,27 @@ defmodule SubcipherWeb.PuzzleLive.Index do
     choice = if cipher && choice && choice.type == cipher.type(), do: choice
     text = if choice, do: %{"input_text" => choice.text}, else: %{}
 
-    socket
-    |> assign(
+    assign(socket,
       cipher: cipher,
       input_kind: input,
       input_kinds: kinds,
       guess_choice: choice,
       text_form: to_form(Ciphers.change_text_puzzle(text))
     )
-    |> wrap(:noreply)
+  end
+
+  defp pictures?(cipher), do: :pictures in cipher.input_kinds()
+
+  defp login_to_upload(socket) do
+    socket
+    |> put_flash(:error, "Log in to decode pictures of symbols.")
+    |> push_navigate(to: ~p"/users/log-in")
   end
 
   # Creating and deleting need an account.
   @impl true
   def handle_event(event, _params, %{assigns: %{current_scope: nil}} = socket)
-      when event in ~w(create_algorithm create_text delete use_guess) do
+      when event in ~w(create_algorithm create_text delete) do
     socket
     |> put_flash(:error, "Log in to create puzzles and algorithms.")
     |> push_navigate(to: ~p"/users/log-in")
@@ -103,26 +127,53 @@ defmodule SubcipherWeb.PuzzleLive.Index do
     socket |> Guessing.toggle_reveal(type) |> wrap(:noreply)
   end
 
-  # Starts a new puzzle with the guessed cipher, prefilled with the guessed
-  # text, with the settings of its guess (none for a hint: `hint` set).
+  # Opens the guessed cipher with the guessed text to decode, and the
+  # settings of its guess (none for a hint: `hint` set). A cipher that
+  # starts from pictures opens as a new puzzle instead (account needed).
   def handle_event("use_guess", %{"type" => type} = params, socket) do
-    guess = if params["hint"], do: nil, else: Guessing.find(socket, type)
+    with {:ok, cipher} <- Steps.fetch_cipher(type) do
+      guess = if params["hint"], do: nil, else: Guessing.find(socket, type)
+      text = socket.assigns.guess_text
+      label = guess && guess.label
+      settings = if guess, do: guess.params, else: %{}
 
-    choice = %{
-      type: type,
-      text: socket.assigns.guess_text,
-      params: if(guess, do: guess.params, else: %{}),
-      label: guess && guess.label
-    }
+      cond do
+        not pictures?(cipher) ->
+          query = %{mode: "decode", text: text, params: url_params(settings)}
 
-    socket
-    |> assign(guess_choice: choice)
-    |> push_patch(to: ~p"/?cipher=#{type}&input=text")
-    |> wrap(:noreply)
+          socket
+          |> put_guess_flash(label)
+          |> push_navigate(to: ~p"/ciphers/#{type}?#{query}")
+
+        !socket.assigns.current_scope ->
+          login_to_upload(socket)
+
+        true ->
+          choice = %{type: type, text: text, params: settings, label: label}
+
+          socket
+          |> assign(guess_choice: choice)
+          |> push_patch(to: ~p"/?cipher=#{type}&input=text")
+      end
+      |> wrap(:noreply)
+    else
+      :error -> wrap(socket, :noreply)
+    end
   end
 
   def handle_event("choose_cipher", %{"type" => type}, socket) do
-    socket |> push_patch(to: ~p"/?cipher=#{type}") |> wrap(:noreply)
+    case Steps.fetch_cipher(type) do
+      {:ok, cipher} ->
+        cond do
+          not pictures?(cipher) -> push_navigate(socket, to: ~p"/ciphers/#{type}")
+          !socket.assigns.current_scope -> login_to_upload(socket)
+          true -> push_patch(socket, to: ~p"/?cipher=#{type}")
+        end
+
+      :error ->
+        socket
+    end
+    |> wrap(:noreply)
   end
 
   def handle_event("validate_text", %{"puzzle" => params}, socket) do
@@ -163,6 +214,16 @@ defmodule SubcipherWeb.PuzzleLive.Index do
   def handle_async(name, result, socket),
     do: name |> Guessing.handle_async(result, socket) |> wrap(:noreply)
 
+  # Settings for a query string: "automatic" (nil) ones are left out.
+  defp url_params(params), do: for({k, v} <- params, v != nil, into: %{}, do: {k, v})
+
+  defp put_guess_flash(socket, nil), do: socket
+
+  defp put_guess_flash(socket, label),
+    do: put_flash(socket, :info, "Guessed settings applied: #{label}.")
+
+  defp picture_ciphers, do: for(c <- Steps.ciphers(), pictures?(c), do: c.type())
+
   defp guess_params(%{params: params}), do: params
   defp guess_params(nil), do: %{}
 
@@ -175,9 +236,9 @@ defmodule SubcipherWeb.PuzzleLive.Index do
           <div>
             <h1 class="text-2xl font-bold tracking-tight">Crack a cipher</h1>
             <p class="text-base-content/70 mt-1">
-              Choose the cipher, give it the cipher text (or pictures of its symbols), then
-              decode it step by step: more steps can be added, each taking the previous one's
-              output.
+              Pick a cipher to encode or decode with it right away: tune its settings, add
+              steps (each taking the previous one's output), and save it as a puzzle when it's
+              worth keeping.
             </p>
           </div>
           <.sign_up_prompt :if={!@current_scope} />
@@ -193,9 +254,13 @@ defmodule SubcipherWeb.PuzzleLive.Index do
             current_scope={@current_scope}
           />
 
-          <div :if={@current_scope && !@cipher} id="choose-cipher" class="space-y-3">
-            <h2 class="font-semibold">Know the cipher? Pick it</h2>
-            <.cipher_grid id_prefix="new-cipher-" event="choose_cipher" />
+          <div :if={!@cipher} id="choose-cipher" class="space-y-3">
+            <h2 class="font-semibold">Know the cipher? Pick it.</h2>
+            <.cipher_grid
+              id_prefix="new-cipher-"
+              event="choose_cipher"
+              locked={if @current_scope, do: [], else: picture_ciphers()}
+            />
           </div>
           <.new_puzzle
             :if={@current_scope && @cipher}
@@ -211,8 +276,8 @@ defmodule SubcipherWeb.PuzzleLive.Index do
         <.library
           current_scope={@current_scope}
           puzzles={@puzzles}
-          algorithms={@algorithms}
           public_puzzles={@public_puzzles}
+          algorithms={@algorithms}
           public_algorithms={@public_algorithms}
           new_algorithm={@new_algorithm}
         />

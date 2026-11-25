@@ -2,7 +2,7 @@ defmodule SubcipherWeb.AlgorithmLive.ModeSwitch do
   @moduledoc "The encode / decode tabs of an algorithm."
   use SubcipherWeb, :html
 
-  attr :algorithm, :any, required: true
+  attr :path, :string, required: true, doc: "the page's path (the mode is patched onto it)"
   attr :mode, :string, required: true, doc: "\"encode\" or \"decode\""
 
   def mode_switch(assigns) do
@@ -19,7 +19,7 @@ defmodule SubcipherWeb.AlgorithmLive.ModeSwitch do
             {"decode", "Decode", "hero-lock-open"}
           ]
         }
-        patch={~p"/algorithms/#{@algorithm}?mode=#{mode}"}
+        patch={"#{@path}?mode=#{mode}"}
         role="tab"
         id={"mode-#{mode}"}
         aria-selected={to_string(@mode == mode)}

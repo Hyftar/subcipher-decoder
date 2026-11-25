@@ -12,6 +12,18 @@ defmodule SubcipherWeb.CipherGuesserLiveTest do
               Enum.zip(Enum.map(?A..?Z, &<<&1>>), String.graphemes("QWERTYUIOPASDFGHJKLZXCVBNM"))
             )
 
+  # Clicks "Decode with this" on a guess: the cipher opens, to decode the text.
+  defp use_guess(view, conn, selector) do
+    view |> element(selector) |> render_click() |> follow_redirect(conn)
+  end
+
+  defp save(view, conn, title) do
+    view
+    |> form("#save-puzzle-form", puzzle: %{title: title})
+    |> render_submit()
+    |> follow_redirect(conn)
+  end
+
   defp guess(view, text) do
     view |> form("#guess-form", guess: %{text: text}) |> render_submit()
     render_async(view, 60_000)
@@ -20,7 +32,10 @@ defmodule SubcipherWeb.CipherGuesserLiveTest do
   describe "logged in" do
     setup :register_and_log_in_user
 
-    test "guesses the cipher and starts a puzzle with its settings", %{conn: conn, scope: scope} do
+    test "guesses the cipher, opens it with its settings, and saves a puzzle", %{
+      conn: conn,
+      scope: scope
+    } do
       {:ok, view, _} = live(conn, ~p"/")
       assert has_element?(view, "#cipher-guesser")
 
@@ -30,18 +45,16 @@ defmodule SubcipherWeb.CipherGuesserLiveTest do
       assert has_element?(view, "#guess-list li:first-child#guess-caesar")
       refute has_element?(view, "#guess-no-match")
 
-      view |> element("#guess-use-caesar") |> render_click()
-      assert_patch(view, ~p"/?cipher=caesar&input=text")
-      assert has_element?(view, "#guess-choice")
-      assert has_element?(view, "#new-text-puzzle-form textarea", text)
+      {:ok, cipher, html} = use_guess(view, conn, "#guess-use-caesar")
+      assert html =~ "Guessed settings applied"
+      assert has_element?(cipher, "#mode-decode[aria-selected=true]")
+      assert has_element?(cipher, "#algorithm-text", text)
+      assert has_element?(cipher, "#stage-text-1", ~r/meet me at the old mill/i)
 
-      {:ok, _show, _html} =
-        view
-        |> form("#new-text-puzzle-form", puzzle: %{title: "Guessed"})
-        |> render_submit()
-        |> follow_redirect(conn)
+      {:ok, _show, _html} = save(cipher, conn, "Guessed")
 
       [%{puzzle: puzzle}] = Ciphers.list_puzzles(scope)
+      assert puzzle.input_text == text
       [step] = Steps.list_steps(puzzle)
       assert step.type == "caesar"
       assert Steps.params(step).shift == 7
@@ -74,7 +87,7 @@ defmodule SubcipherWeb.CipherGuesserLiveTest do
       refute has_element?(view, "#guess-preview-caesar")
     end
 
-    test "the solvers find a shuffled alphabet, and its settings start the puzzle", %{
+    test "the solvers find a shuffled alphabet, and its settings open the cipher", %{
       conn: conn,
       scope: scope
     } do
@@ -87,15 +100,10 @@ defmodule SubcipherWeb.CipherGuesserLiveTest do
       refute has_element?(view, "#guess-deep-pending")
       refute has_element?(view, "#guess-no-match")
 
-      view |> element("#guess-use-mixed_alphabet") |> render_click()
-      assert_patch(view, ~p"/?cipher=mixed_alphabet&input=text")
-      assert has_element?(view, "#guess-choice")
+      {:ok, cipher, _html} = use_guess(view, conn, "#guess-use-mixed_alphabet")
+      assert has_element?(cipher, "#stage-text-1", ~r/beginning there was nothing/i)
 
-      {:ok, _show, _html} =
-        view
-        |> form("#new-text-puzzle-form", puzzle: %{title: "Solved"})
-        |> render_submit()
-        |> follow_redirect(conn)
+      {:ok, _show, _html} = save(cipher, conn, "Solved")
 
       [%{puzzle: puzzle}] = Ciphers.list_puzzles(scope)
       [step] = Steps.list_steps(puzzle)
@@ -119,7 +127,9 @@ defmodule SubcipherWeb.CipherGuesserLiveTest do
   end
 
   describe "logged out" do
-    test "only the quick pass: the hint, and an invitation to log in", %{conn: conn} do
+    test "only the quick pass: the hint opens its cipher, and an invitation to log in", %{
+      conn: conn
+    } do
       {:ok, view, _} = live(conn, ~p"/")
       guess(view, MixedAlphabet.encode(@long_plain, %{mapping: @shuffled}))
 
@@ -128,18 +138,20 @@ defmodule SubcipherWeb.CipherGuesserLiveTest do
       assert has_element?(view, "#guess-deep-login")
       refute has_element?(view, "#guess-deep-pending")
 
-      assert {:error, {:live_redirect, %{to: "/users/log-in"}}} =
+      assert {:error, {:live_redirect, %{to: "/ciphers/mixed_alphabet?" <> _}}} =
                view |> element("#guess-hint-use") |> render_click()
     end
 
-    test "can guess, but must log in to decode", %{conn: conn} do
+    test "can guess and decode, but must log in to save", %{conn: conn} do
       {:ok, view, _} = live(conn, ~p"/")
 
       guess(view, Caesar.encode(@plain, %{shift: 3}))
       assert has_element?(view, "#guess-caesar")
 
-      assert {:error, {:live_redirect, %{to: "/users/log-in"}}} =
-               view |> element("#guess-use-caesar") |> render_click()
+      {:ok, cipher, _html} = use_guess(view, conn, "#guess-use-caesar")
+      assert has_element?(cipher, "#stage-text-1", ~r/meet me at the old mill/i)
+      assert has_element?(cipher, "#save-draft-login")
+      refute has_element?(cipher, "#save-puzzle-form")
     end
   end
 end

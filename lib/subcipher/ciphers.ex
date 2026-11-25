@@ -386,6 +386,38 @@ defmodule Subcipher.Ciphers do
     end
   end
 
+  @doc """
+  Creates a puzzle whose input is text (`attrs`: title, input_text), decoded
+  by `steps` (`[%{"type" => type, "params" => params}]`, in order: those of
+  an algorithm), owned by the scope's user.
+  """
+  def create_text_puzzle_with_steps(%Scope{user: user}, attrs, [_ | _] = steps) do
+    changeset =
+      Puzzle.text_changeset(
+        %Puzzle{user_id: user.id},
+        Map.put(stringify(attrs), "threshold", default_threshold())
+      )
+
+    steps
+    |> Enum.with_index(1)
+    |> Enum.reduce(Multi.insert(Multi.new(), :puzzle, changeset), fn
+      {%{"type" => type, "params" => params}, position}, multi ->
+        Multi.insert(multi, {:step, position}, fn %{puzzle: puzzle} ->
+          %Subcipher.Steps.Step{
+            puzzle_id: puzzle.id,
+            position: position,
+            type: Subcipher.Steps.cipher!(type).type(),
+            params: params
+          }
+        end)
+    end)
+    |> Repo.transaction()
+    |> case do
+      {:ok, %{puzzle: puzzle}} -> {:ok, get_puzzle!(puzzle.id)}
+      {:error, _step, reason, _} -> {:error, reason}
+    end
+  end
+
   def change_text_puzzle(attrs \\ %{}), do: Puzzle.text_changeset(%Puzzle{}, attrs)
 
   def update_input_text(%Puzzle{} = puzzle, text) do

@@ -4,6 +4,7 @@ defmodule Subcipher.AlgorithmsTest do
   import Subcipher.CipherFixtures
   import Subcipher.AccountsFixtures, only: [user_scope_fixture: 0]
   alias Subcipher.{Algorithms, Ciphers, Steps}
+  alias Subcipher.Algorithms.Algorithm
 
   defp text_puzzle(steps) do
     {:ok, puzzle} =
@@ -134,6 +135,45 @@ defmodule Subcipher.AlgorithmsTest do
       assert length(algorithm.steps) == 2
       assert length(Ciphers.get_puzzle!(puzzle.id).steps) == 1
       assert algorithm.source_puzzle_id == puzzle.id
+    end
+  end
+
+  describe "drafts" do
+    test "are edited in memory, and saved as a puzzle with their steps" do
+      assert {:ok, draft} = Algorithms.new_draft("caesar", %{"shift" => "5"})
+      assert Algorithm.draft?(draft)
+      assert draft.title == "Caesar cipher"
+      assert Algorithms.encode(draft, "abc") |> List.last() |> Map.get(:value) == "fgh"
+
+      {:ok, draft} = Algorithms.add_step(draft, "reverse")
+      {:ok, draft} = Algorithms.update_step_params(draft, 0, %{"shift" => "1"})
+      assert Algorithm.draft?(draft)
+      assert [%{"type" => "caesar"}, %{"type" => "reverse"}] = draft.steps
+      assert Subcipher.Repo.aggregate(Algorithm, :count) == 0
+
+      scope = user_scope_fixture()
+      {:ok, puzzle} = Algorithms.save_as_puzzle(scope, draft, %{title: "Kept", input_text: "dcb"})
+      assert puzzle.user_id == scope.user.id
+      assert [%{type: "caesar", position: 1}, %{type: "reverse", position: 2}] = puzzle.steps
+      assert List.last(Steps.run(puzzle.input_text, puzzle.steps)).output == "abc"
+    end
+
+    test "invalid settings keep the defaults; unknown ciphers are refused" do
+      assert {:ok, draft} = Algorithms.new_draft("caesar", %{"shift" => "x"})
+      assert [%{"params" => %{"shift" => 3}}] = draft.steps
+      assert {:error, :unknown_cipher} = Algorithms.new_draft("enigma")
+    end
+
+    test "can't be saved without a cipher text" do
+      {:ok, draft} = Algorithms.new_draft("caesar")
+
+      assert {:error, %Ecto.Changeset{}} =
+               Algorithms.save_as_puzzle(user_scope_fixture(), draft, %{
+                 title: "Empty",
+                 input_text: ""
+               })
+
+      assert Subcipher.Repo.aggregate(Subcipher.Ciphers.Puzzle, :count) == 0
     end
   end
 

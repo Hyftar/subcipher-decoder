@@ -29,4 +29,7 @@ defmodule Subcipher.Algorithms.Algorithm do
   end
 
   def pictures?(%__MODULE__{input_kind: kind}), do: kind == "pictures"
+
+  @doc "Whether `algorithm` is an unsaved draft (see `Subcipher.Algorithms.new_draft/2`)."
+  def draft?(%__MODULE__{__meta__: %{state: state}}), do: state == :built
 end

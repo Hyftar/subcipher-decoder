@@ -33,7 +33,7 @@ defmodule SubcipherWeb.PuzzleLive.Index.CipherGuesser do
           <.icon name="hero-sparkles" class="size-5" />
         </div>
         <div class="space-y-0.5">
-          <h2 class="font-semibold">Not sure? Let us guess</h2>
+          <h2 class="font-semibold">Not sure? Let us guess.</h2>
           <p class="text-sm text-base-content/60">
             Paste the cipher text: every cipher tries its likeliest keys, and the one whose
             result reads most like English wins.
@@ -181,7 +181,7 @@ defmodule SubcipherWeb.PuzzleLive.Index.CipherGuesser do
           </p>
           <.use_button
             id="guess-hint-use"
-            type={@result.hint.cipher.type()}
+            cipher={@result.hint.cipher}
             hint
             current_scope={@current_scope}
             primary={false}
@@ -273,7 +273,7 @@ defmodule SubcipherWeb.PuzzleLive.Index.CipherGuesser do
             <.reveal_switch type={guess.cipher.type()} revealed={guess.revealed?} />
             <.use_button
               id={"guess-use-#{guess.cipher.type()}"}
-              type={guess.cipher.type()}
+              cipher={guess.cipher}
               current_scope={@current_scope}
               primary={guess.winner}
             />
@@ -350,12 +350,20 @@ defmodule SubcipherWeb.PuzzleLive.Index.CipherGuesser do
   end
 
   attr :id, :string, required: true
-  attr :type, :string, required: true
+  attr :cipher, :atom, required: true
   attr :hint, :boolean, default: false, doc: "a hint: start without settings"
   attr :current_scope, :any, required: true
   attr :primary, :boolean, default: false
 
+  # Opens the cipher with the guessed text; one that starts from pictures
+  # needs an account.
   defp use_button(assigns) do
+    assigns =
+      assign(assigns,
+        type: assigns.cipher.type(),
+        locked: !assigns.current_scope and :pictures in assigns.cipher.input_kinds()
+      )
+
     ~H"""
     <button
       type="button"
@@ -368,8 +376,8 @@ defmodule SubcipherWeb.PuzzleLive.Index.CipherGuesser do
         if(@primary, do: "btn-secondary", else: "btn-ghost")
       ]}
     >
-      {if @current_scope, do: "Decode with this", else: "Log in to decode"}
-      <.icon name="hero-arrow-right" class="size-4" />
+      {if @locked, do: "Log in to decode", else: "Decode with this"}
+      <.icon name={if @locked, do: "hero-lock-closed", else: "hero-arrow-right"} class="size-4" />
     </button>
     """
   end
